@@ -50,7 +50,7 @@ function fireBurst(D: AudioDirector, t0: number, n: number, rpm: number, id = 'm
 
 const MIX_DUR: Record<string, number> = {
   mix_rifle_auto_outdoor: 5.5, mix_rifle_auto_indoor: 5.5, mix_single_shots: 10, mix_suppressed_auto: 3.5, mix_enemy_distances: 11.5,
-  mix_explosion_near: 8, mix_firefight: 11, mix_foley: 9, mix_lowhealth: 7.5, mix_ambience: 24,
+  mix_explosion_near: 8, mix_firefight: 11, mix_foley: 11.5, mix_lowhealth: 7.5, mix_ambience: 24,
 };
 
 const SCENARIOS: Record<string, Scenario> = {
@@ -104,7 +104,8 @@ const SCENARIOS: Record<string, Scenario> = {
     D.switchWeapon({ weaponId: 'pistol' }, 5.5);
     D.dryfire({ weaponId: 'm4' }, 6.6);
     D.jump({ position: EYE }, 7.2); D.land({ position: EYE, impactSpeed: 7, surface: 'concrete' }, 7.8);
-    return 9;
+    D.mantle({ position: EYE, height: 1.2, vault: true }, 8.6); D.mantle({ position: EYE, height: 1.8, vault: false }, 9.8);
+    return 11.5;
   },
   mix_lowhealth: (E, D) => {
     D.startAmbience(0);

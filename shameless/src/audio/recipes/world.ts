@@ -306,3 +306,34 @@ export function grenadeBounce(s: Synth) {
   s.modal({ t: 0, gain: 0.45, modes: [{ f: rr(r, 650, 900), tau: 0.05, a: 1 }, { f: rr(r, 1500, 1900), tau: 0.04, a: 0.7 }, { f: rr(r, 2900, 3600), tau: 0.025, a: 0.5 }] });
   s.noiseL({ t: 0, tau: 0.004, gain: 0.35, f: [['hp', 2000]] });
 }
+
+/** Mantle / vault: gloved hands slap onto the ledge, body and gear drag over the edge, boots scuff and plant. */
+export function mantle(s: Synth, vault: boolean) {
+  const r = s.rng;
+  const handSlap = (t: number, g: number) => {
+    s.noiseL({ t, a: 0.0008, tau: 0.012, gain: g, color: 'pink', f: [['bp', rr(r, 900, 1500), 0.8], ['hp', 150]], pan: rr(r, -0.3, 0.3) });
+    s.noiseL({ t, a: 0.001, tau: 0.02, gain: g * 0.8, color: 'brown', f: [['lp', 300]] });
+    grit(s, 4, t + 0.002, t + 0.05, 30, 2500, 7000, g * 0.3);
+  };
+  handSlap(0.01, 1.4);
+  handSlap(rr(r, 0.05, 0.09), 1.15);
+  const dragT = vault ? 0.1 : 0.14, dragD = vault ? 0.22 : 0.42;
+  // body over the edge: cloth + plate carrier drag
+  s.noiseL({ t: dragT, a: dragD * 0.3, hold: dragD * 0.3, tau: dragD * 0.25, gain: 0.35, color: 'pink', f: [['bp', rr(r, 1200, 1800), 0.6, undefined, { to: 800, tau: dragD }], ['hp', 200]] });
+  s.scatter(Math.round(dragD * 70), dragT, dragT + dragD, 3, (t) => s.noiseL({ t, tau: rr(r, 0.001, 0.003), gain: 0.15 * rr(r, 0.2, 1), f: [['bp', rr(r, 1500, 6000), 1.3]] }));
+  s.rustle(dragT - 0.02, dragD + 0.1, 0.3);
+  gearBits(s, dragT, dragT + dragD, vault ? 6 : 9, 0.15);
+  // weapon knocks the ledge
+  s.modal({ t: dragT + rr(r, 0.02, dragD * 0.6), gain: 0.18, modes: [{ f: rr(r, 900, 1300), tau: 0.035, a: 1 }, { f: rr(r, 2200, 2900), tau: 0.025, a: 0.7 }, { f: rr(r, 4000, 5000), tau: 0.012, a: 0.4 }] });
+  if (!vault) { // knee / boot on the ledge
+    const tk = dragT + dragD * 0.55;
+    s.noiseL({ t: tk, a: 0.002, tau: 0.025, gain: 0.55, color: 'brown', f: [['lp', 240]] });
+    s.noiseL({ t: tk + 0.01, a: 0.002, tau: 0.02, gain: 0.3, f: [['bp', 2600, 0.8]] });
+  }
+  // feet plant on the far side
+  const tl = dragT + dragD + rr(r, 0.03, 0.08);
+  s.noiseL({ t: tl, a: 0.002, tau: 0.035, gain: 0.8, color: 'brown', f: [['lp', 190]], drive: 1.4 });
+  s.noiseL({ t: tl, a: 0.0015, tau: 0.014, gain: 0.35, f: [['bp', 2400, 0.8]] });
+  s.noiseL({ t: tl + rr(r, 0.04, 0.07), a: 0.002, tau: 0.025, gain: 0.45, color: 'brown', f: [['lp', 220]] });
+  gearBits(s, tl, tl + 0.15, 5, 0.12);
+}

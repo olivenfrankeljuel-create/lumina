@@ -133,6 +133,8 @@ export interface PlayerState {
   readonly crouchBlend: number;
   readonly slideBlend: number;
   readonly cameraRoll: number;
+  /** Seconds until the weapon may fire after leaving sprint/tac-sprint (sprint-out time). */
+  readonly sprintOutRemaining: number;
   cancelSprint(): void;
   health: number;
   readonly maxHealth: number;

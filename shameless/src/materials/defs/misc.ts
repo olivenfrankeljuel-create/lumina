@@ -122,17 +122,18 @@ void gen(vec2 uv, inout Surf s) {
   float wv = mix(hx, hy, over);
   float tapeShade = mix(hash1(vec2(0.0, c.y), vec2(1.0, F.y), 1.0), hash1(vec2(c.x, 0.0), vec2(F.x, 1.0), 2.0), over);
   // folds & creases
-  float crease = ridged(uv + warp(uv, 3.0, 2, 0.05, 3.0), vec2(4.0), 4, 4.0);
+  float crease = ridged(uv + warp(uv, 3.0, 2, 0.05, 3.0), vec2(3.0), 3, 4.0);
   float folds = fbm(uv, 3.0, 4, 5.0);
   float dirtN = fbm(uv + warp(uv, 5.0, 2, 0.03, 6.0), 6.0, 5, 7.0) * 0.5 + 0.5;
   float fuzz = fbm(uv, 512.0, 2, 8.0) * 0.5 + 0.5;
   vec3 base = srgb(vec3(172, 152, 112));
   vec3 col = base * (0.86 + 0.18 * tapeShade) * (0.9 + 0.1 * wv);
   col = mix(col, srgb(vec3(150, 128, 96)), smoothstep(0.5, 0.85, dirtN) * 0.7);
-  col *= 1.0 - smoothstep(0.75, 0.95, crease) * 0.25;
+  col *= 1.0 - smoothstep(0.88, 0.99, crease) * 0.1;
+  col *= 0.94 + 0.12 * (folds * 0.5 + 0.5);
   col = mix(col, srgb(vec3(196, 178, 140)), (1.0 - wv) * 0.25); // sand in the gaps
   s.albedo = col;
-  s.height = 0.3 + wv * 0.25 + folds * 0.15 + smoothstep(0.6, 0.95, crease) * 0.2 + fuzz * 0.03;
+  s.height = 0.3 + wv * 0.25 + folds * 0.2 + smoothstep(0.7, 0.99, crease) * 0.12 + fuzz * 0.03;
   s.rough = 0.88 + fuzz * 0.08 - wv * 0.06;
   s.mask = clamp((1.0 - wv) * 0.6 + smoothstep(0.5, 0.9, dirtN) * 0.4, 0.0, 1.0);
 }

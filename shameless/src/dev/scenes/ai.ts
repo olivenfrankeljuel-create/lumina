@@ -9,7 +9,8 @@ import { createPhysics } from '../../physics';
 import { createPlayer } from '../../player';
 import { createFX } from '../../fx';
 import { simplifierReady } from '../../ai/sdf';
-import { buildCharacter, PRESET_VARIANTS, characterCacheStats, buildStats } from '../../ai/character';
+import { PRESET_VARIANTS, characterCacheStats, buildStats } from '../../ai/character';
+import { SoldierVisual } from '../../ai/soldier';
 
 /**
  * AI / character dev scene.
@@ -23,16 +24,35 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   await simplifierReady;
   const t0 = performance.now();
   const chars = (params.has('nochars') ? [] : PRESET_VARIANTS).map((v, i) => {
-    const c = buildCharacter(ctx, v);
+    const c = new SoldierVisual(ctx, v, i % 2 === 1);
     c.root.position.set((i - 1.5) * 1.1, 0, -4);
     ctx.scene.add(c.root);
     return c;
   });
+  const lineup = { mode: 'idle', yaw: 0 };
+  const poseLineup = () => {
+    chars.forEach((c, i) => {
+      const a = c.anim;
+      const yaw = lineup.yaw + (lineup.mode === 'turns' ? [0, -Math.PI / 4, -Math.PI / 2, Math.PI] [i] : 0);
+      c.root.rotation.y = yaw;
+      const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+      a.aimDir.copy(fwd);
+      a.aim = lineup.mode === 'aim' ? 1 : 0;
+      a.carry = lineup.mode === 'walk' || lineup.mode === 'run' ? (lineup.mode === 'run' ? 1 : 0.0) : 0;
+      a.crouch = lineup.mode === 'crouch' ? 1 : 0;
+      const spd = lineup.mode === 'walk' ? 1.5 : lineup.mode === 'run' ? 4.5 : 0;
+      c.velocity.copy(fwd).multiplyScalar(spd);
+      if (lineup.mode === 'aim') a.aimDir.set(Math.sin(yaw), 0.05, Math.cos(yaw)).normalize();
+    });
+  };
   console.warn('build ms', (performance.now() - t0).toFixed(0), JSON.stringify(characterCacheStats()), buildStats.join('\n'));
   const cam = { pos: new THREE.Vector3(0, 1.3, 0.5), look: new THREE.Vector3(0, 1.0, -4), fov: 40 };
   const api = {
     cam(px: number, py: number, pz: number, lx: number, ly: number, lz: number, fov = 40) { cam.pos.set(px, py, pz); cam.look.set(lx, ly, lz); cam.fov = fov; },
     chars,
+    lineup(mode: string, yaw = 0) { lineup.mode = mode; lineup.yaw = yaw; chars.forEach((c) => (c.anim.frozen = false)); },
+    freeze(on = true) { chars.forEach((c) => (c.anim.frozen = on)); },
+    phase(p: number) { chars.forEach((c, i) => (c.anim.phase = (p + i * 0.13) % 1)); },
   };
   window.__shameless.api = api as unknown as Record<string, unknown>;
   const dbg = { err: '', tickMs: 0, ticks: 0 };
@@ -43,6 +63,8 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     const dt = window.__shameless.fixedDt ?? Math.min(0.05, (now - last) / 1000);
     last = now;
     const tt = performance.now();
+    poseLineup();
+    for (const c of chars) c.update(dt, (x, z) => ctx.world.groundHeight(x, z));
     try {
       tickWithCamera(ctx, dt, () => {
         ctx.camera.position.copy(cam.pos);
@@ -193,10 +215,10 @@ async function createClay(container: HTMLElement): Promise<GameContext> {
   ctx.physics.addStatic(root);
   ctx.world = { root, playerSpawns: [{ position: new THREE.Vector3(), yaw: 0 }], enemySpawns: [new THREE.Vector3(0, 0, -20)], coverPoints: [], groundHeight: () => 0, update() {} };
   const pos = new THREE.Vector3();
-  ctx.player = {
+  ctx.player = ({
     position: pos, velocity: new THREE.Vector3(), eyeHeight: 1.65, yaw: 0, pitch: 0, grounded: true, sprinting: false, crouched: false, sliding: false, lean: 0,
-    health: 100, maxHealth: 100, alive: true, addRecoil() {}, addCameraShake() {}, damage(a) { ctx.player.health -= a; }, update() {}, respawn() {},
-  };
+    health: 100, maxHealth: 100, alive: true, addRecoil() {}, addCameraShake() {}, damage(a: number) { ctx.player.health -= a; }, update() {}, respawn() {},
+  }) as unknown as GameContext['player'];
   ctx.weapons = { currentId: 'm4', ammoInMag: 30, magSize: 30, reserveAmmo: 90, adsAmount: 0, reloading: false, fovTarget: 75, spread: 0, update() {} };
   ctx.enemies = { enemies: [], applyHit() {}, update() {} };
   ctx.fx = { update() {} };

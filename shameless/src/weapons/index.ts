@@ -8,6 +8,7 @@ import { ArmRig, HandPose, POSE_FLAT, POSE_RELAXED, clonePose, lerpPose, solveGr
 import { SpringN, Track, clamp, damp, lerp, noise1, smootherstep, smoothstep, rng, DEG } from './math';
 import { rifleReload, pistolReload, inspectTrack, switchTrack, ReloadAnim, GRIP, MAGSEAT } from './anims';
 import { MuzzleFlash, MuzzleSmoke, BrassEjector } from './effects';
+import { playerExt } from '../player';
 
 type V6 = [number, number, number, number, number, number];
 
@@ -169,7 +170,8 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
   const sw = switchTrack();
   let adsLin = 0, adsE = 0;
   let sprintBlend = 0, tacBlend = 0, slideBlend = 0, crouchBlend = 0;
-  let tacActive = false, lastSprintPress = -10;
+  let mantleBlend = 0;
+  const pext = playerExt(ctx.player) as Partial<ReturnType<typeof playerExt>>;
   let cooldown = 0;
   let shotIndex = 0, lastShotTime = -10;
   let bloom = 0;
@@ -237,6 +239,7 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
   function activate(i: number) {
     defs.forEach((d, j) => (d.model.root.visible = j === i));
     cur = i;
+    if ('moveSpeedScale' in pext) (pext as { moveSpeedScale: number }).moveSpeedScale = defs[i].model.kind === 'pistol' ? 1.05 : 1.0;
     reloadT = -1; inspectT = -1;
     const m = defs[i].model;
     resetMags(m);
@@ -324,7 +327,8 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     const pv = d.recoilV * first * adsMul * (1 + (rand() - 0.5) * 0.25);
     const ph = (d.recoilH[i % d.recoilH.length] * d.recoilHScale + (rand() - 0.5) * d.recoilRand) * adsMul;
     ctx.player.addRecoil(pv, -ph);
-    ctx.player.addCameraShake(m.kind === 'rifle' ? 0.12 : 0.18);
+    ctx.player.addCameraShake(m.kind === 'rifle' ? 0.06 : 0.09);
+    pext.addViewPunch?.(0.35 * adsMul, (rand() - 0.5) * 0.25, (rand() - 0.5) * 0.35);
     shotIndex++;
 
     // viewmodel recoil
@@ -366,11 +370,6 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     const s = clamp(e.impactSpeed / 8, 0.15, 1.2);
     impulseSpring.impulse(1, -0.9 * s); impulseSpring.impulse(3, -1.4 * s); impulseSpring.impulse(5, (rand() - 0.5) * s);
   });
-  ctx.events.on('player:footstep', () => {
-    // phase-lock the bob so the low point lands on the footstep
-    const target = Math.round((stride - Math.PI / 2) / Math.PI) * Math.PI + Math.PI / 2;
-    stride = lerp(stride, target, 0.35);
-  });
 
   function update(dt: number) {
     time += dt;
@@ -389,13 +388,12 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
       if (input.pressed.has('swap')) requestSwitch((pending >= 0 ? pending : cur) === 0 ? 1 : 0);
       if (input.pressed.has('inspect') && reloadT < 0 && switchPhase === 'none') inspectT = 0;
       if (input.pressed.has('reload') && reloadT < 0 && switchPhase === 'none' && d.ammo < d.magSize && d.reserve > 0) startReload(d.ammo <= 0);
-      if (input.pressed.has('sprint')) {
-        if (time - lastSprintPress < 0.35 || p.sprinting) tacActive = true;
-        lastSprintPress = time;
-      }
     }
-    const sprintState = dbg.forceSprint !== null ? dbg.forceSprint : p.sprinting && p.grounded ? (tacActive ? 2 : 1) : 0;
-    if (!p.sprinting && dbg.forceSprint === null) tacActive = false;
+    // sprint / tactical sprint / slide / crouch come smoothed from the player controller
+    const pSprint = p.sprintBlend ?? (p.sprinting ? 1 : 0);
+    const pTac = p.tacSprintBlend ?? 0;
+    const sprintState = dbg.forceSprint !== null ? dbg.forceSprint : pTac > 0.5 ? 2 : pSprint > 0.5 ? 1 : 0;
+    const mantle = p.mantling ? Math.sin(Math.PI * clamp(p.mantleProgress ?? 0.5, 0, 1)) : 0;
 
     // --- blends
     const canAds = reloadT < 0 && switchPhase === 'none' && sprintState === 0;
@@ -405,10 +403,16 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     if (dbg.forceAds !== null && stepping === false) adsLin = dbg.forceAds;
     adsE = smootherstep(0, 1, adsLin);
     if ((prevAds < 0.5) !== (adsLin < 0.5)) ctx.events.emit('weapon:ads', { active: adsLin >= 0.5 });
-    sprintBlend = damp(sprintBlend, sprintState === 1 ? 1 : 0, 9, dt);
-    tacBlend = damp(tacBlend, sprintState === 2 ? 1 : 0, 8, dt);
-    slideBlend = damp(slideBlend, p.sliding || dbg.forceSlide ? 1 : 0, 10, dt);
-    crouchBlend = damp(crouchBlend, p.crouched ? 1 : 0, 8, dt);
+    if (dbg.forceSprint !== null) {
+      sprintBlend = damp(sprintBlend, sprintState === 1 ? 1 : 0, 9, dt);
+      tacBlend = damp(tacBlend, sprintState === 2 ? 1 : 0, 8, dt);
+    } else {
+      tacBlend = damp(tacBlend, pTac, 14, dt);
+      sprintBlend = damp(sprintBlend, Math.max(0, pSprint - pTac), 14, dt);
+    }
+    slideBlend = damp(slideBlend, dbg.forceSlide ? 1 : (p.slideBlend ?? (p.sliding ? 1 : 0)), 12, dt);
+    crouchBlend = damp(crouchBlend, p.crouchBlend ?? (p.crouched ? 1 : 0), 10, dt);
+    mantleBlend = damp(mantleBlend, mantle, 12, dt);
     if (sprintState > 0 && inspectT >= 0) inspectT = -1;
 
     // --- switching
@@ -463,7 +467,8 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     // --- firing
     cooldown = Math.max(0, cooldown - dt);
     dryFireCooldown -= dt;
-    const busy = reloadT >= 0 || switchPhase !== 'none' || sprintBlend > 0.3 || tacBlend > 0.3;
+    const blocked = !stepping && !!pext.weaponBlocked && dbg.forceSprint === null && pSprint > 0.5;
+    const busy = reloadT >= 0 || switchPhase !== 'none' || sprintBlend > 0.3 || tacBlend > 0.3 || mantleBlend > 0.2 || blocked || !p.alive;
     const wantFire = (d.auto && fireMode === 'auto') ? firing : firePressed;
     if (wantFire && !busy) {
       if (inspectT >= 0) inspectT = -1;
@@ -499,14 +504,15 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     if (p.grounded && !wasGrounded) { /* handled by player:land event when available */ }
     wasGrounded = p.grounded;
 
-    // --- bob
+    // --- bob (phase-locked to the player's stride: footfalls at phase 0 and 0.5)
     const grounded = p.grounded ? 1 : 0;
-    const cycle = sprintState > 0 ? 4.4 : 3.3;
-    stride += (2 * Math.PI * speed / cycle) * dt * grounded;
-    const bobA = clamp(speed / 4.5, 0, 1.6) * grounded * lerp(1, 0.12, adsE);
+    if (p.stridePhase !== undefined) stride = p.stridePhase * Math.PI * 2 - 0.45; // weapon lags the footfall slightly
+    else stride += (2 * Math.PI * speed / (sprintState > 0 ? 4.4 : 3.3)) * dt * grounded;
+    const bobW = p.bobWeight !== undefined ? Math.min(1.5, p.bobWeight) : clamp(speed / 4.5, 0, 1.6) * grounded;
+    const bobA = bobW * lerp(1, 0.12, adsE) * (1 - slideBlend) * (1 - mantleBlend);
     const sp = sprintBlend + tacBlend;
     const bx = Math.sin(stride) * 0.0065 * bobA * (1 + sp * 0.8);
-    const by = -Math.abs(Math.cos(stride)) * 0.0075 * bobA * (1 + sp * 0.9) + 0.0035 * bobA;
+    const by = -(0.5 + 0.5 * Math.cos(stride * 2)) * 0.008 * bobA * (1 + sp * 0.9) + 0.004 * bobA;
     const bRoll = Math.sin(stride) * 0.022 * bobA * (1 + sp);
     const bYaw = Math.sin(stride) * 0.012 * bobA;
     const bPitch = Math.cos(stride * 2) * 0.012 * bobA * (1 + sp * 1.4);
@@ -529,6 +535,8 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     }
     poseXf[1] -= 0.006 * crouchBlend * nonAds; poseXf[5] -= 0.04 * crouchBlend * nonAds;
     poseXf[5] += p.lean * 0.1 * nonAds;
+    // mantle: weapon dips and cants away while the hands are busy climbing
+    poseXf[1] -= 0.09 * mantleBlend; poseXf[3] -= 0.5 * mantleBlend; poseXf[5] += 0.5 * mantleBlend; poseXf[4] += 0.25 * mantleBlend;
     // animation layers
     if (reloadT >= 0) {
       const anim = reloadEmpty ? d.reloadEmpty : d.reloadTac;

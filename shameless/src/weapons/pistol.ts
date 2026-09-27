@@ -185,8 +185,8 @@ export function buildPistol(mats: GunMaterials): WeaponModel {
     mag, magSeat, magNew, magHandle,
     trigger,
     pivot: new THREE.Vector3(0, -0.04, 0.0),
-    rightGrip: { wrist: gripWrist(new THREE.Vector3(0.0155, -0.070, 0.004), new THREE.Vector3(-0.25, -0.3, -0.92), new THREE.Vector3(0.95, 0.0, -0.26)), sdf: gripSdf, index: [0.5, 0.95, 0.4], thumb: null, squeeze: 0.25 },
-    leftGrip: { wrist: gripWrist(new THREE.Vector3(-0.030, -0.078, -0.008), new THREE.Vector3(0.45, -0.25, -0.86), new THREE.Vector3(-0.9, -0.15, -0.4)), sdf: supportSdf, index: null, thumb: null, squeeze: 0.2 },
+    rightGrip: { wrist: gripWrist(new THREE.Vector3(0.0155, -0.070, 0.004), new THREE.Vector3(-0.25, -0.3, -0.92), new THREE.Vector3(0.95, 0.0, -0.26)), sdf: gripSdf, index: null, thumb: null, squeeze: 0.25, indexTarget: new THREE.Vector3(0, -0.033, -0.081), thumbTarget: new THREE.Vector3(-0.017, -0.012, -0.048) },
+    leftGrip: { wrist: gripWrist(new THREE.Vector3(-0.030, -0.078, -0.008), new THREE.Vector3(0.45, -0.25, -0.86), new THREE.Vector3(-0.9, -0.15, -0.4)), sdf: supportSdf, index: null, thumb: null, squeeze: 0.2, thumbTarget: new THREE.Vector3(-0.019, -0.022, -0.080) },
     leftPoses: { mag: { wrist: gripWrist(new THREE.Vector3(-0.024, -0.075, -0.012), new THREE.Vector3(0.1, 0.15, -1), new THREE.Vector3(-1, 0.05, 0.1)), sdf: sdOrientedBox(new THREE.Matrix4().makeTranslation(0, -0.08, -0.016), new THREE.Vector3(0.012, 0.06, 0.019), 0.003), squeeze: 0.2 } },
     dispose() { root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); }); },
   };

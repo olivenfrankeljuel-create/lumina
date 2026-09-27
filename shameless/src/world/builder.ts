@@ -10,8 +10,11 @@ import type { Surface } from '../core/events';
 export type MatKey = string;
 
 export const WEAR = [0.12, 0.35, 0.6, 0.85];
+/** Large-surface materials keep 4 tint/wear variants; everything else is folded to 2 (draw-call budget). */
+const RICH = new Set<MaterialName>(['plaster_white', 'plaster_worn', 'brick_tan', 'brick_red', 'concrete', 'concrete_dirty']);
 export function mk(name: MaterialName, variant = 0): MatKey {
-  return `${name}|${variant}`;
+  const v = RICH.has(name) ? variant % 4 : variant % 2 === 0 ? 0 : 3;
+  return `${name}|${v}`;
 }
 export function parseKey(key: MatKey): { name: MaterialName; variant: number } {
   const [n, v] = key.split('|');

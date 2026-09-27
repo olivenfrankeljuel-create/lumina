@@ -75,7 +75,8 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   /** World direction toward a source at a heading relative to where the player looks. */
   const dirAt = (relDeg: number) => {
     const h = -real.yaw + (relDeg * Math.PI) / 180;
-    return new THREE.Vector3(Math.sin(h), 0, -Math.cos(h));
+    // player:damaged.fromDir = direction the damage travelled (source -> player)
+    return new THREE.Vector3(-Math.sin(h), 0, Math.cos(h));
   };
   const kill = (id: number, headshot: boolean) => {
     const e = enemyList[id];

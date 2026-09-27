@@ -64,14 +64,14 @@ void gen(vec2 uv, inout Surf s) {
   float clods = fbm(uv, 64.0, 4, 3.0) * 0.5 + 0.5;
   float grain = fbm(uv, 400.0, 2, 4.0) * 0.5 + 0.5;
   // pebbles
-  vec3 pb = spots(uv, 90.0, 0.35, 0.15, 0.45, 5.0);
-  vec3 pb2 = spots(uv + 0.23, 220.0, 0.4, 0.2, 0.5, 6.0);
+  vec3 pb = spots(uv, 90.0, 0.12, 0.15, 0.45, 5.0);
+  vec3 pb2 = spots(uv + 0.23, 220.0, 0.25, 0.2, 0.5, 6.0);
   float peb = pb.x;
   float pebS = pb2.x;
   // dried-mud cracks in low areas
   vec4 vc = voronoiT(uv + warp(uv, 8.0, 2, 0.01, 7.0), 18.0, 0.9, 8.0);
-  float dryZone = smoothstep(0.55, 0.4, big);
-  float cr = (1.0 - smoothstep(0.0, 0.05, vc.x)) * dryZone;
+  float dryZone = smoothstep(0.42, 0.3, big) * smoothstep(0.4, 0.6, noiseT(uv, 6.0, 30.0) * 0.5 + 0.5);
+  float cr = (1.0 - smoothstep(0.0, 0.03 + 0.03 * clods, vc.x)) * dryZone;
   // scuffs / tracks: directional smears
   float scuff = fbm(uv + warp(uv, 3.0, 2, 0.05, 9.0), vec2(6.0, 48.0), 4, 0.5, 10.0) * 0.5 + 0.5;
   float h = 0.45 + big * 0.25 + clods * 0.12 + grain * 0.05 + scuff * 0.04 - cr * 0.2;
@@ -81,10 +81,12 @@ void gen(vec2 uv, inout Surf s) {
   soil *= 0.85 + 0.25 * clods;
   soil = mix(soil, srgb(vec3(96, 76, 58)), smoothstep(0.62, 0.8, 1.0 - big) * 0.5); // damp dark
   soil *= 0.92 + 0.12 * grain;
-  vec3 pebCol = mix(srgb(vec3(150, 140, 126)), srgb(vec3(112, 96, 80)), pb.y);
+  vec3 pebCol = mix(srgb(vec3(146, 128, 104)), srgb(vec3(108, 90, 72)), pb.y);
   vec3 col = mix(soil, pebCol, peb * 0.85);
-  col = mix(col, mix(srgb(vec3(170, 150, 122)), srgb(vec3(120, 104, 88)), pb2.y), pebS * 0.7);
-  col *= 1.0 - cr * 0.3;
+  col = mix(col, mix(srgb(vec3(160, 138, 108)), srgb(vec3(118, 100, 80)), pb2.y), pebS * 0.5);
+  col *= 1.0 - cr * 0.2;
+  // footprint / tyre scuffs: lighter compacted bands
+  col = mix(col, col * 1.08, smoothstep(0.6, 0.8, scuff) * 0.6);
   s.albedo = col;
   s.height = h;
   s.rough = clamp(0.9 + grain * 0.06 - peb * 0.12 - smoothstep(0.62, 0.8, 1.0 - big) * 0.1, 0.0, 1.0);
@@ -227,7 +229,7 @@ void gen(vec2 uv, inout Surf s) {
   float clods = fbm(uv, 48.0, 4, 5.0) * 0.5 + 0.5;
   float grain = fbm(uv, 360.0, 2, 6.0) * 0.5 + 0.5;
   float h = 0.35 + big * 0.35 + rut * 0.08 + clods * 0.1 + tread * 0.02 + grain * 0.03;
-  float water = 0.45;
+  float water = 0.53;
   float wet = smoothstep(water + 0.08, water, h);
   float puddle = smoothstep(water + 0.005, water - 0.005, h);
   vec3 c = mix(srgb(vec3(96, 78, 60)), srgb(vec3(122, 100, 76)), clods);

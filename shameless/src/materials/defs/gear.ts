@@ -26,7 +26,7 @@ void gen(vec2 uv, inout Surf s) {
     float ln = abs(fract(dot(uv, vec2(-dir.y, dir.x)) * 16.0 + fbm(uv, 5.0, 2, 8.0 + float(i)) * 0.3) - 0.5);
     sc = max(sc, (1.0 - smoothstep(0.0, 0.006, ln)) * smoothstep(0.64, 0.8, noiseT(uv, vec2(6.0), 9.0 + float(i)) * 0.5 + 0.5));
   }
-  vec3 base = srgb(vec3(60, 61, 59)) * (0.88 + 0.2 * cr.z) * (0.95 + 0.08 * micro);
+  vec3 base = srgb(vec3(66, 67, 64)) * (0.88 + 0.2 * cr.z) * (0.95 + 0.08 * micro);
   vec3 col = mix(base, base * 1.25 + 0.012, handle * 0.35);
   col = mix(col, vec3(0.5, 0.505, 0.51), sc * 0.8);
   s.albedo = col;
@@ -106,15 +106,15 @@ export const cloth_multicam: MatDef = {
 float blob(vec2 uv, float F, float t, float s) {
   vec2 q = uv + warp(uv, F * 0.5, 3, 0.35 / F, s + 1.0);
   float n = fbm(q, vec2(F), 4, 0.45, s) * 0.5 + 0.5;
-  return smoothstep(t, t + 0.012, n);
+  return smoothstep(t, t + 0.03, n);
 }
 void gen(vec2 uv, inout Surf s) {
   vec3 tan_ = srgb(vec3(184, 168, 132));
   vec3 green = srgb(vec3(132, 132, 96));
-  vec3 brown = srgb(vec3(128, 104, 78));
-  vec3 midGreen = srgb(vec3(104, 108, 72));
-  vec3 dBrown = srgb(vec3(84, 64, 48));
-  vec3 dGreen = srgb(vec3(66, 74, 52));
+  vec3 brown = srgb(vec3(140, 116, 86));
+  vec3 midGreen = srgb(vec3(118, 122, 84));
+  vec3 dBrown = srgb(vec3(100, 80, 60));
+  vec3 dGreen = srgb(vec3(82, 90, 62));
   vec3 cream = srgb(vec3(214, 204, 176));
   float grad = fbm(uv, vec2(1.0, 2.0), 3, 0.5, 1.0) * 0.5 + 0.5;
   vec3 col = mix(tan_, green, smoothstep(0.3, 0.7, grad));
@@ -178,10 +178,10 @@ void gen(vec2 uv, inout Surf s) {
   float creaseL = smoothstep(0.8, 0.97, crease);
   float polish = smoothstep(0.45, 0.8, fbm(uv, 3.0, 4, 6.0) * 0.5 + 0.5);
   float dirtN = smoothstep(0.5, 0.85, fbm(uv, 5.0, 4, 7.0) * 0.5 + 0.5);
-  vec3 col = mix(srgb(vec3(112, 84, 58)), srgb(vec3(138, 106, 74)), v.y * 0.5 + polish * 0.4);
+  vec3 col = mix(srgb(vec3(132, 100, 70)), srgb(vec3(158, 122, 86)), v.y * 0.5 + polish * 0.4);
   col *= 0.85 + 0.2 * peb;
-  col *= 1.0 - creaseL * 0.35;
-  col = mix(col, col * vec3(0.7, 0.64, 0.58), dirtN * 0.4);
+  col *= 1.0 - creaseL * 0.18;
+  col = mix(col, col * vec3(0.8, 0.76, 0.7), dirtN * 0.3);
   s.albedo = col;
   s.height = 0.4 + peb * 0.35 + fine * 0.1 - creaseL * 0.35;
   s.rough = clamp(0.62 - polish * 0.18 + (1.0 - peb) * 0.12 + creaseL * 0.1, 0.0, 1.0);

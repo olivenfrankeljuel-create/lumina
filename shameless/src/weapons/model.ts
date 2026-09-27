@@ -15,6 +15,10 @@ export interface HandGrip {
   /** Thumb solve on/off; fixed thumb angles otherwise [cmcFlex, cmcAbd, mcp, ip, roll]. */
   thumb?: [number, number, number, number, number] | null;
   spread?: number;
+  /** Weapon-space point the index finger pad should rest on (e.g. trigger face). */
+  indexTarget?: THREE.Vector3;
+  /** Weapon-space point the thumb tip should reach. */
+  thumbTarget?: THREE.Vector3;
   /** Target skin gap (fraction of finger radius that may sink into the surface). */
   squeeze?: number;
 }

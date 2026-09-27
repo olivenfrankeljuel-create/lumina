@@ -53,6 +53,19 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     shot(name: string) { const s = SHOTS[name]; if (!s) return `unknown shot ${name}`; api.cam(s[0], s[1], s[2], s[3], s[4], s[5] ?? 70); return name; },
     shots: () => Object.keys(SHOTS),
     player() { free = null; },
+    keys() {
+      const m = new Map<string, { n: number; tris: number }>();
+      ctx.world.root.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const k = String(mesh.userData.matKey ?? mesh.name);
+        const e = m.get(k) ?? { n: 0, tris: 0 };
+        e.n++;
+        e.tris += (mesh.geometry.index?.count ?? mesh.geometry.attributes.position.count) / 3;
+        m.set(k, e);
+      });
+      return [...m.entries()].sort((a, b) => b[1].tris - a[1].tris).map(([k, e]) => `${k}:${e.n}:${Math.round(e.tris / 1000)}k`).join(' ');
+    },
     stats() { return { ...last, world: (ctx.world as unknown as { stats: unknown }).stats, geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length }; },
   };
   window.__shameless.api = api as unknown as Record<string, unknown>;
@@ -62,6 +75,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   const q = params.get('shotname');
   api.shot(q ?? 'street');
   let lastT = performance.now();
+  const px = new Uint8Array(4);
   // Frames are rendered only while budget > 0; the frame counter advances only on idle frames so the
   // screenshot tool's frame waits complete after the budgeted renders are done (keeps capture fast).
   const loop = (now: number) => {
@@ -73,6 +87,8 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
       info.reset();
       tick(ctx, dt);
       last = { calls: info.render.calls, triangles: info.render.triangles };
+      // force GPU sync so idle frames (and screenshots) only start after the GPU finished this frame
+      if (budget !== Infinity) { const gl = ctx.renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); }
       if (budget === Infinity) window.__shameless.frame++;
       return;
     }

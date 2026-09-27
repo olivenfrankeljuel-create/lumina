@@ -281,7 +281,7 @@ const FRAG_MAIN = /* glsl */ `
   {
     vec3 cn = shNrm; vec3 cp = shPos;
     float curv = length(fwidth(cn)) / max(length(fwidth(cp)), 1e-5);
-    float e = smoothstep(90.0, 450.0, curv) * smoothstep(0.35, 0.65, shAccM.b + (shAccH - 0.5) * 0.3) * clamp(wear * 1.5, 0.0, 1.0);
+    float e = smoothstep(60.0, 400.0, curv) * smoothstep(0.35, 0.65, shAccM.b + (shAccH - 0.5) * 0.3) * clamp(wear * 1.5, 0.0, 1.0);
     alb = mix(alb, shEdge.rgb, e);
     shRough = mix(shRough, shEdge.a, e);
     shAccO.b = mix(shAccO.b, 1.0, e);
@@ -372,7 +372,8 @@ export function patchMaterial(
       );
 
     let fs = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${defs}\n${FRAG_PARS}`)
+      .replace('#include <common>', `#include <common>\n${defs}`)
+      .replace('#include <clipping_planes_pars_fragment>', `#include <clipping_planes_pars_fragment>\n${FRAG_PARS}`)
       .replace('#include <map_fragment>', 'float shAO = 1.0; float shEmis = 0.0; float shCC = 1.0;')
       .replace('#include <normal_fragment_maps>', FRAG_MAIN)
       .replace('#include <aomap_fragment>', AO_FRAG)

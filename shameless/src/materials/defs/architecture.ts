@@ -221,16 +221,20 @@ void gen(vec2 uv, inout Surf s) {
   vec4 ag = worleyT(uv, 300.0, 1.0, 7.0);
   float aggr = smoothstep(0.5, 0.2, ag.x) * step(0.45, ag.z) * wearN;
   float cr = cracks(uv, 4.0, 0.004, 0.4, 8.0);
-  float oil = smoothstep(0.62, 0.8, fbm(uv + warp(uv, 5.0, 2, 0.03, 9.0), 5.0, 5, 10.0) * 0.5 + 0.5);
+  float oil = smoothstep(0.6, 0.78, fbm(uv + warp(uv, 5.0, 2, 0.03, 9.0), 5.0, 5, 10.0) * 0.5 + 0.5);
   float rustSt = smoothstep(0.7, 0.85, fbm(uv, 7.0, 5, 11.0) * 0.5 + 0.5);
   float mott = fbm(uv + warp(uv, 3.0, 3, 0.05, 12.0), 5.0, 6, 13.0) * 0.5 + 0.5;
-  vec3 col = srgb(vec3(150, 146, 136)) * (0.88 + 0.18 * mott) * (0.95 + 0.08 * sand);
+  float blot = fbm(uv + warp(uv, 6.0, 3, 0.02, 30.0), 10.0, 6, 31.0) * 0.5 + 0.5;
+  float speckD = spots(uv, 400.0, 0.3, 0.2, 0.45, 32.0).x;
+  vec3 col = srgb(vec3(152, 147, 136)) * (0.8 + 0.32 * mott) * (0.93 + 0.12 * sand);
+  col = mix(col, col * vec3(0.84, 0.82, 0.8), smoothstep(0.5, 0.75, blot) * 0.7);  // damp / dirt blotches
+  col *= 1.0 - speckD * 0.15;
   col *= 1.0 - swirl * 0.06;
   col = mix(col, mix(srgb(vec3(120, 114, 104)), srgb(vec3(176, 166, 148)), ag.z), aggr * 0.8);
   col = mix(col, col * vec3(0.5, 0.48, 0.46), oil * 0.75);
   col = mix(col, srgb(vec3(126, 90, 60)), rustSt * 0.35);
   col *= 1.0 - cr * 0.35;
-  col = mix(col, srgb(vec3(60, 58, 55)), joint);
+  col = mix(col, srgb(vec3(88, 82, 74)), joint);
   col *= 1.0 - jointEdge * 0.1;
   s.albedo = col;
   s.height = 0.7 + sand * 0.04 + grain * 0.03 + swirl * 0.04 + aggr * 0.05 - cr * 0.3 - joint * 0.6 - jointEdge * 0.05;
@@ -257,8 +261,8 @@ void gen(vec2 uv, inout Surf s) {
   vec2 d2 = min(bf, 1.0 - bf) * size;
   float erosion = fbm(uv, 48.0, 4, 1.0) * 0.0025 + fbm(uv, 300.0, 2, 2.0) * 0.0007;
   float d = min(d2.x, d2.y) - 0.006 + erosion;
-  float cornerD = length(max(vec2(0.03) - min(bf, 1.0 - bf) * size, 0.0));
-  float cornerChip = step(0.02, cornerD + (fbm(uv, 90.0, 3, 13.0) * 0.5 + 0.5) * 0.012 - 0.006) * step(0.6, bh.z);
+  float cornerD = length(max(vec2(0.014) - min(bf, 1.0 - bf) * size, 0.0));
+  float cornerChip = step(0.011, cornerD + (fbm(uv, 90.0, 3, 13.0) * 0.5 + 0.5) * 0.006 - 0.003) * step(0.6, bh.z);
   d = min(d, mix(d, -0.002, cornerChip));
   float brick = smoothstep(-0.0005, 0.0008, d);
   float rnd = smoothstep(0.0, 0.007, d);
@@ -299,7 +303,7 @@ void gen(vec2 uv, inout Surf s) {
 };
 
 export const brick_red: MatDef = {
-  surface: 'brick', tile: 1.8, depth: 0.014, pom: 0.014, wear: 0.35, dust: 0.25, macro: 0.06, cavity: 1.3,
+  surface: 'brick', tile: 1.8, depth: 0.014, pom: 0.014, wear: 0.3, dust: 0.25, macro: 0.06, cavity: 0.8,
   glsl: /* glsl */ `
 // Running-bond red clay brick, 21.5 x 6.5 cm, 1 cm recessed mortar. 8 x 24 bricks per 1.8m tile.
 void gen(vec2 uv, inout Surf s) {
@@ -314,10 +318,10 @@ void gen(vec2 uv, inout Surf s) {
   // distances to brick edge in meters
   vec2 size = vec2(0.225, 0.075);
   vec2 d2 = min(bf, 1.0 - bf) * size;
-  float edgeNoise = fbm(uv, 48.0, 3, 4.0) * 0.001 + fbm(uv, 480.0, 2, 5.0) * 0.0004;
+  float edgeNoise = fbm(uv, 48.0, 3, 4.0) * 0.0006 + fbm(uv, 480.0, 2, 5.0) * 0.0005;
   float d = min(d2.x - 0.005, d2.y - 0.005) + edgeNoise + (bh.w - 0.5) * 0.001;
-  float cornerD = length(max(vec2(0.03) - min(bf, 1.0 - bf) * size, 0.0));
-  float cornerChip = step(0.02, cornerD + (fbm(uv, 90.0, 3, 16.0) * 0.5 + 0.5) * 0.012 - 0.006) * step(0.55, bh.z);
+  float cornerD = length(max(vec2(0.014) - min(bf, 1.0 - bf) * size, 0.0));
+  float cornerChip = step(0.011, cornerD + (fbm(uv, 90.0, 3, 16.0) * 0.5 + 0.5) * 0.006 - 0.003) * step(0.55, bh.z);
   d = min(d, mix(d, -0.002, cornerChip));
   float brick = smoothstep(-0.0005, 0.0005, d);
   float rnd = smoothstep(0.0, 0.006, d);
@@ -354,7 +358,7 @@ void gen(vec2 uv, inout Surf s) {
   bcol *= 0.9 + 0.1 * sin(bf.x * PI);
   // edge darkening/soot at brick edges
   bcol *= 0.9 + 0.1 * rnd;
-  vec3 mcol = srgb(vec3(158, 150, 136)) * (0.8 + 0.3 * mortarN);
+  vec3 mcol = srgb(vec3(178, 170, 154)) * (0.82 + 0.3 * mortarN);
   vec3 col = mix(mcol, bcol, brick);
   // efflorescence (salt) and dirt streaks
   float eff = smoothstep(0.62, 0.9, fbm(uv + warp(uv, 4.0, 3, 0.05, 13.0), 5.0, 6, 14.0) * 0.5 + 0.5) * (0.4 + 0.6 * (1.0 - rnd));
@@ -364,7 +368,7 @@ void gen(vec2 uv, inout Surf s) {
   s.albedo = col;
   s.height = h;
   s.rough = mix(0.93, 0.8 + face * 0.1 - bh.y * 0.05 + spall * 0.1 + sandF * 0.05, brick) + eff * 0.04;
-  s.ao = mix(0.75, 1.0, rnd);
+  s.ao = mix(0.85, 1.0, rnd);
   s.mask = clamp((1.0 - brick) * 0.9 + (1.0 - rnd) * 0.4 + st * 0.3 + pits * 0.5, 0.0, 1.0);
 }
 `,

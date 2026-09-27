@@ -134,7 +134,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
       wall2.position.set(-3.0, 1.6, 0);
       const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.5, 96, 64), mat);
       sphere.position.set(0.6, 0.5, -1.2);
-      const box = new THREE.Mesh(new RoundedBoxGeometry(0.6, 0.4, 0.4, 4, 0.03), mat);
+      const box = new THREE.Mesh(new RoundedBoxGeometry(0.6, 0.4, 0.4, 4, 0.006), mat);
       box.position.set(-0.6, 0.2, -1.6);
       box.rotation.y = 0.5;
       for (const m of [floor, wall, wall2, sphere, box]) { m.castShadow = true; m.receiveShadow = true; scene.add(m); }
@@ -167,7 +167,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     floor.position.set(0, 0.02, 0.26);
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.34, 96, 64), neutral);
     sphere.position.set(-0.42, 0.38, 0.28);
-    const box = new THREE.Mesh(new RoundedBoxGeometry(0.44, 0.32, 0.32, 4, 0.025), neutral);
+    const box = new THREE.Mesh(new RoundedBoxGeometry(0.44, 0.32, 0.32, 4, 0.008), neutral);
     box.position.set(0.5, 0.2, 0.3);
     box.rotation.y = 0.6;
     for (const m of [ground, wall, floor, sphere, box]) { m.castShadow = true; m.receiveShadow = true; scene.add(m); }

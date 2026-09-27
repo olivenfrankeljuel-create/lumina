@@ -55,7 +55,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     const dt = window.__shameless.fixedDt ?? Math.min(0.05, (now - last) / 1000);
     last = now;
     tick(ctx, dt);
-    maxVoices = Math.max(maxVoices, E.voices.length);
+    maxVoices = Math.max(maxVoices, E.voices.filter((v) => !v.done && v.end > E.now).length);
     window.__shameless.frame++;
   };
   requestAnimationFrame(loop);

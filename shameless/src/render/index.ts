@@ -45,7 +45,7 @@ export const DEFAULT_TUNING: RenderTuning = {
   },
   ao: { radius: 1.6, intensity: 2.2, falloff: 0.6 },
   envIntensity: 1.0,
-  adapt: { ref: -2.0, strength: 0.0, min: -0.6, max: 1.2 },
+  adapt: { ref: -2.35, strength: 0.6, min: -0.5, max: 1.0 },
 };
 
 export interface RenderDebugApi {

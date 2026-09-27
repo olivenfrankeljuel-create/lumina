@@ -243,6 +243,7 @@ export class AudioEngine {
       v.gain.gain.cancelScheduledValues(t);
       v.gain.gain.setTargetAtTime(0, t, fade / 3);
       v.src.stop(t + fade * 2.5);
+      v.end = Math.min(v.end, t + fade * 2.5);
     } catch { /* already stopped */ }
   }
 
@@ -256,7 +257,9 @@ export class AudioEngine {
   /** Drop finished voices whose onended hasn't fired (e.g. suspended context). */
   private reap() {
     const t = this.ctx.currentTime;
-    for (let i = this.voices.length - 1; i >= 0; i--) if (this.voices[i].end + 0.5 < t) this.cleanup(this.voices[i]);
+    // only in realtime: offline contexts sit at t=0 while the whole timeline is scheduled
+    if (t <= 0) return;
+    for (let i = this.voices.length - 1; i >= 0; i--) if (this.voices[i].end + 0.25 < t) this.cleanup(this.voices[i]);
   }
 
   /**

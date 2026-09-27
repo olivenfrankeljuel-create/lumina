@@ -106,6 +106,8 @@ export const SOUND_DEFS: SoundDef[] = [
   def('gear_rattle', 'step', 0.35, 1, 5, (s) => X.gearRattle(s), { gainDb: -15 }),
   def('jump', 'body', 0.4, 1, 3, (s) => X.jump(s), { gainDb: -12, tier: 0 }),
   def('land', 'body', 0.45, 1, 3, (s) => X.land(s), { gainDb: -9, tier: 0 }),
+  def('mantle', 'body', 1.0, 1, 3, (s) => X.mantle(s, false), { gainDb: -9, tier: 0 }),
+  def('vault', 'body', 0.8, 1, 3, (s) => X.mantle(s, true), { gainDb: -9, tier: 0 }),
   def('slide', 'body', 1.1, 1, 2, (s) => X.slide(s), { gainDb: -11 }),
   def('bodyfall', 'body', 0.7, 1, 3, (s) => X.bodyFall(s), { gainDb: -6, send: 0.2, ref: 3, maxDist: 60 }),
 

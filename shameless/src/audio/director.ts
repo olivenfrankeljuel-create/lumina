@@ -261,6 +261,11 @@ export class AudioDirector {
     this.E.play(STEP[e.surface] ?? 'step_concrete', { when: t, gain: 0.8 + 0.5 * k, rate: 0.92 });
   }
 
+  mantle(e: GameEvents['player:mantle'], when?: number) {
+    const k = clamp01(0.55 + e.height / 2.5);
+    this.E.play(e.vault ? 'vault' : 'mantle', { when: this.now(when), gain: k, rate: e.vault ? 1.05 : 1 });
+  }
+
   slide(_e: GameEvents['player:slide'], when?: number) { this.E.play('slide', { when: this.now(when) }); }
 
   grenadeThrow(_e: GameEvents['grenade:throw'], when?: number) {

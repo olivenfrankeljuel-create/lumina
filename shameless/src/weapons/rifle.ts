@@ -562,10 +562,12 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
 
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   const rightGrip = {
-    wrist: gripWrist(V(0.0165, -0.088, 0.006), V(-0.25, -0.33, -0.91), V(0.95, 0.0, -0.26)),
+    wrist: gripWrist(V(0.015, -0.077, 0.026), V(0.1, -0.33, -0.94), V(0.996, 0.034, 0.094)),
     sdf: gripSdf,
-    index: [0.55, 0.9, 0.35] as [number, number, number],
+    index: null,
     thumb: null,
+    indexTarget: V(0.0, -0.051, -0.075),
+    thumbTarget: V(-0.022, -0.036, -0.030),
     squeeze: 0.25,
   };
   const leftGrip = {
@@ -573,6 +575,7 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     sdf: hgSdf,
     index: null,
     thumb: null,
+    thumbTarget: V(-0.026, 0.003, -0.395),
     squeeze: 0.25,
   };
   // Off hand gripping the magazine body (reload) - pose authored in mag space, converted at runtime
@@ -590,7 +593,7 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     rightGrip, leftGrip,
     leftPoses: {
       // off hand on the magazine, in magazine space (mag front toward -Z, body down -Y)
-      mag: { wrist: gripWrist(V(-0.0255, -0.075, -0.030), V(0.12, 0.25, -1), V(-1, 0.05, 0.1)), sdf: magBody, index: null, thumb: null, squeeze: 0.2 },
+      mag: { wrist: gripWrist(V(-0.0255, -0.075, -0.030), V(0.12, 0.25, -1), V(-1, 0.05, 0.1)), sdf: magBody, index: null, thumb: null, squeeze: 0.2, thumbTarget: V(-0.0135, -0.035, -0.004) },
     },
     dispose() {
       root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });

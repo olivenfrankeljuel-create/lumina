@@ -262,8 +262,8 @@ export class ExposurePass extends Pass {
   private idx = 0;
   private first = true;
   /** Adaptation speed (1/s) towards brighter / darker. */
-  speedUp = 2.2;
-  speedDown = 1.2;
+  speedUp = 3.0;
+  speedDown = 2.0;
   /** Adapted log2 luminance texture (R channel) for the grade shader. */
   get texture(): THREE.Texture { return this.adaptRT[this.idx].texture; }
 

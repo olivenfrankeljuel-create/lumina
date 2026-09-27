@@ -422,7 +422,8 @@ export async function createHUD(ctx: GameContext, root: HTMLElement): Promise<HU
   ctx.events.on('player:damaged', (e) => {
     hitPulse = Math.min(1, Math.max(hitPulse, 0.35 + e.amount / 45));
     if (!e.fromDir) return;
-    const d = tmpV.set(e.fromDir.x, 0, e.fromDir.z);
+    // fromDir is the direction the damage travelled (source -> player); arcs point back at the source.
+    const d = tmpV.set(-e.fromDir.x, 0, -e.fromDir.z);
     if (d.lengthSq() < 1e-6) return;
     d.normalize();
     // Refresh an arc already pointing roughly that way, else recycle the oldest.
@@ -568,7 +569,7 @@ export async function createHUD(ctx: GameContext, root: HTMLElement): Promise<HU
     }
 
     // crosshair
-    const hide = w.adsAmount > 0.35 || p.sprinting || state !== 'playing';
+    const hide = w.adsAmount > 0.35 || p.sprinting || !!p.tacSprinting || !!p.mantling || state !== 'playing';
     if (hide !== chHidden) { chHidden = hide; ch.classList.toggle('hidden', hide); }
     chSpread += (w.spread - chSpread) * Math.min(1, dt * 20);
     const gap = 0.5 + chSpread * 2.6 + (p.grounded ? 0 : 0.6);

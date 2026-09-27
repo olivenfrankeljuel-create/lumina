@@ -46,7 +46,7 @@ void gen(vec2 uv, inout Surf s) {
   }
   // fading: fine vertical weathering + brushed-on touch-up patches of a slightly different green
   float fadeN = fbm(uv + warp(uv, 4.0, 2, 0.02, 12.0), vec2(8.0, 3.0), 5, 0.5, 13.0) * 0.5 + 0.5;
-  vec3 pc = mix(paintC, fadedC, smoothstep(0.35, 0.9, fadeN) * 0.55);
+  vec3 pc = mix(paintC, fadedC, smoothstep(0.4, 0.9, fadeN) * 0.3);
   vec2 tq = fract(uv * vec2(2.0, 3.0));
   vec3 th = hash3(floor(uv * vec2(2.0, 3.0)), vec2(2.0, 3.0), 30.0);
   vec2 tr = abs(tq - 0.5 - (th.xy - 0.5) * 0.4) - vec2(0.12 + 0.12 * th.z, 0.08 + 0.1 * th.x);
@@ -54,7 +54,7 @@ void gen(vec2 uv, inout Surf s) {
   float brushM = fbm(uv, vec2(160.0, 12.0), 3, 0.5, 32.0) * 0.5 + 0.5;
   pc = mix(pc, paintC * vec3(0.92, 0.97, 0.95) * (0.96 + 0.06 * brushM), touch);
   pc *= 0.96 + 0.05 * peel;
-  vec3 primerC = srgb(vec3(126, 64, 44));
+  vec3 primerC = srgb(vec3(112, 66, 50));
   vec3 rustC = mix(srgb(vec3(104, 52, 26)), srgb(vec3(150, 82, 40)), fbm(uv, 90.0, 3, 14.0) * 0.5 + 0.5);
   vec3 steelC = vec3(0.52, 0.52, 0.53);
   vec3 col = pc;
@@ -257,11 +257,11 @@ void gen(vec2 uv, inout Surf s) {
   vec3 dirtC = srgb(vec3(92, 80, 66));
   float low = 1.0 - lz;
   vec3 col = mix(alu * 0.9, alu * 1.05, dome);           // polished tops
-  col = mix(col, dirtC, low * dirtZ * 0.75);
+  col = mix(col, dirtC, low * (0.25 + dirtZ * 0.35));
   col = mix(col, alu * 0.75, grain * 0.2);
   s.albedo = col;
   s.height = 0.3 + dome * 0.6 + grain * 0.02 - sc * 0.05;
-  s.metal = 1.0 - low * dirtZ * 0.75;
+  s.metal = 1.0 - low * (0.25 + dirtZ * 0.35);
   s.rough = clamp(0.45 + roll * 0.1 - dome * 0.18 + low * dirtZ * 0.4 + sc * 0.1, 0.0, 1.0);
   s.mask = low;
 }

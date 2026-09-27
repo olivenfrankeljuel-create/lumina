@@ -72,6 +72,7 @@ export async function createAudio(ctx: GameContext): Promise<AudioSystem> {
   ev.on('player:jump', (e) => D.jump(e));
   ev.on('player:land', (e) => D.land(e));
   ev.on('player:slide', (e) => D.slide(e));
+  ev.on('player:mantle', (e) => D.mantle(e));
   ev.on('grenade:throw', (e) => D.grenadeThrow(e));
   ev.on('grenade:bounce', (e) => D.grenadeBounce(e));
   ev.on('explosion', (e) => D.explosion(e));

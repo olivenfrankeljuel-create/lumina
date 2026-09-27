@@ -321,40 +321,104 @@ export function solveGrip(hand: HandRig, wristIn: THREE.Matrix4, grip: HandGrip,
   hand.root.matrix.copy(wrist);
   if (hand.mirrored) hand.root.matrix.multiply(new THREE.Matrix4().makeScale(-1, 1, 1));
   const identity = new THREE.Matrix4();
-  const relaxed = [0.45, 0.55, 0.35];
+  const SYN = [1.0, 1.15, 0.72]; // natural flexion synergy (mcp : pip : dip)
   const solveChain = (chain: Joint[], setAngle: (j: number, a: number) => void, maxes: number[]) => {
-    for (let j = 0; j < chain.length; j++) {
-      for (let k = j + 1; k < chain.length; k++) setAngle(k, 0);
-      const clear = (a: number) => {
+    const n = chain.length;
+    const clearance = () => {
+      hand.root.updateMatrixWorld(true);
+      let c = Infinity;
+      for (let k = 0; k < n; k++) c = Math.min(c, segmentClearance(chain[k], grip.sdf, identity, squeeze));
+      return c;
+    };
+    const setAll = (c: number) => { for (let j = 0; j < n; j++) setAngle(j, Math.min(maxes[j], minF + c * SYN[j])); };
+    // phase 1: coupled curl until first contact
+    let c = 0, lastOk = 0;
+    const cMax = 1.7;
+    let touched = false;
+    setAll(0);
+    if (clearance() < 0) {
+      // already penetrating when open: extend back as far as allowed, then accept
+      setAll(0);
+    } else {
+      for (c = 0; c <= cMax; c += step) {
+        setAll(c);
+        if (clearance() < 0) { touched = true; break; }
+        lastOk = c;
+      }
+      setAll(touched ? lastOk : 0.45);
+    }
+    if (!touched) return;
+    // phase 2: close the remaining joints (distal first contact)
+    for (let j = 1; j < n; j++) {
+      let a = Math.min(maxes[j], minF + lastOk * SYN[j]);
+      let ok = a;
+      for (; a <= maxes[j]; a += step) {
         setAngle(j, a);
         hand.root.updateMatrixWorld(true);
-        let c = Infinity;
-        for (let k = j; k < chain.length; k++) c = Math.min(c, segmentClearance(chain[k], grip.sdf, identity, squeeze));
-        return c;
-      };
-      let best: number | null = null;
-      let started = clear(minF) >= 0;
-      let bestC = -Infinity, bestA = minF;
-      for (let a = minF; a <= maxes[j] + 1e-6; a += step) {
-        const c = clear(a);
-        if (c > bestC) { bestC = c; bestA = a; }
-        if (c >= 0) { started = true; best = a; }
-        else if (started) break; // contact reached while curling
+        let cc = Infinity;
+        for (let k = j; k < n; k++) cc = Math.min(cc, segmentClearance(chain[k], grip.sdf, identity, squeeze));
+        if (cc < 0) break;
+        ok = a;
       }
-      if (best === null) best = bestA; // always penetrating: least-bad angle
-      else if (best >= maxes[j] - step * 0.5) best = Math.min(best, relaxed[j] + 0.4); // never touched: stay relaxed-ish
-      setAngle(j, best);
+      setAngle(j, ok);
     }
     hand.root.updateMatrixWorld(true);
   };
   const fixedIndex = grip.index ?? null;
+  const tip = new THREE.Vector3();
+  const clearOf = (chain: Joint[]) => { let c = Infinity; for (const j of chain) c = Math.min(c, segmentClearance(j, grip.sdf, identity, squeeze * 0.5)); return c; };
   for (let i = 0; i < 4; i++) {
     const set = (j: number, a: number) => { pose.f[i][j] = a; hand.applyPose(pose); };
+    if (i === 0 && grip.indexTarget) {
+      // pad of the distal phalanx onto the target (grid search, penalize penetration)
+      const ch = hand.fingers[0];
+      let best = Infinity, bs = 0, b0 = 0, b1 = 0;
+      for (let sp = -0.35; sp <= 0.61; sp += 0.06) for (let a0 = -0.1; a0 <= 1.4; a0 += 0.07) for (let a1 = 0; a1 <= 1.6; a1 += 0.08) {
+        pose.s[0] = sp; pose.f[0][0] = a0; pose.f[0][1] = a1; pose.f[0][2] = a1 * 0.6;
+        hand.applyPose(pose);
+        hand.root.updateMatrixWorld(true);
+        tip.set(0, -ch[2].r0 * 0.9, -ch[2].len * 0.55).applyMatrix4(ch[2].node.matrixWorld);
+        const c = Math.min(segmentClearance(ch[0], grip.sdf, identity, squeeze), segmentClearance(ch[1], grip.sdf, identity, squeeze));
+        const cost = tip.distanceTo(grip.indexTarget) + Math.max(0, -c) * 4 + Math.abs(sp) * 0.004;
+        if (cost < best) { best = cost; bs = sp; b0 = a0; b1 = a1; }
+      }
+      pose.s[0] = bs; pose.f[0][0] = b0; pose.f[0][1] = b1; pose.f[0][2] = b1 * 0.6;
+      hand.applyPose(pose);
+      continue;
+    }
     if (i === 0 && fixedIndex) { fixedIndex.forEach((a, j) => set(j, a)); continue; }
     solveChain(hand.fingers[i], set, maxF);
   }
   if (grip.thumb) {
     for (let j = 0; j < 5; j++) pose.t[j] = grip.thumb[j];
+    hand.applyPose(pose);
+  } else if (grip.thumbTarget) {
+    const th = hand.thumb;
+    const tgt = grip.thumbTarget;
+    const evalT = (t: number[]) => {
+      for (let j = 0; j < 5; j++) pose.t[j] = t[j];
+      hand.applyPose(pose);
+      hand.root.updateMatrixWorld(true);
+      tip.set(0, 0, -th[2].len).applyMatrix4(th[2].node.matrixWorld);
+      return tip.distanceTo(tgt) + Math.max(0, -clearOf(th)) * 4;
+    };
+    let bt = [0, 0.3, 0.3, 0.3, 0], best = evalT(bt);
+    // coarse grid, then two refinement passes around the best
+    const ranges: [number, number, number][] = [[-1.2, 1.6, 0.2], [-1.2, 1.6, 0.2], [0, 0.9, 0.45], [0, 0.9, 0.45], [-0.9, 0.9, 0.45]];
+    const search = (rs: [number, number, number][]) => {
+      const cur = bt.slice();
+      const rec = (k: number) => {
+        if (k === 5) { const c = evalT(cur); if (c < best) { best = c; bt = cur.slice(); } return; }
+        for (let v = rs[k][0]; v <= rs[k][1] + 1e-6; v += rs[k][2]) { cur[k] = v; rec(k + 1); }
+      };
+      rec(0);
+    };
+    search(ranges);
+    for (const st of [0.07, 0.025]) {
+      const c = bt.slice();
+      search(c.map((v, k) => [v - st * 2, v + st * 2, st] as [number, number, number]).map((r, k) => (k >= 2 ? [Math.max(0, r[0]), Math.min(1.2, r[1]), r[2]] as [number, number, number] : r)));
+    }
+    for (let j = 0; j < 5; j++) pose.t[j] = bt[j];
     hand.applyPose(pose);
   } else {
     const set = (j: number, a: number) => { if (j === 0) pose.t[2] = a; else pose.t[3] = a; hand.applyPose(pose); };
