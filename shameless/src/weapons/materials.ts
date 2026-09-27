@@ -145,13 +145,13 @@ export function createGunMaterials(ctx: GameContext): GunMaterials {
     return m;
   };
 
-  const anodized = W('gun_anodized', { wear: 0.85, wearColor: new THREE.Color(0.62, 0.62, 0.6), wearMetal: 1, wearRough: 0.32, cavity: 0.6 }, { tileSize: 0.25 });
+  const anodized = W('gun_anodized', { wear: 0.85, wearColor: new THREE.Color(0.62, 0.62, 0.6), wearMetal: 1, wearRough: 0.32, cavity: 0.6 }, { tileSize: 0.4 });
   const parkerized = W('gun_parkerized', { wear: 0.55, wearColor: new THREE.Color(0.42, 0.42, 0.43), wearMetal: 1, wearRough: 0.3, cavity: 0.5 }, { tileSize: 0.25 });
   const steelDark = W('gun_parkerized', { wear: 0.3, wearColor: new THREE.Color(0.35, 0.35, 0.36), wearMetal: 1, wearRough: 0.35, cavity: 0.6 }, { tileSize: 0.2, seed: 3 });
   const polymer = W('gun_polymer_black', { wear: 0.35, wearColor: new THREE.Color(0.2, 0.2, 0.2), wearMetal: 0, wearRough: 0.45, cavity: 0.5 }, { tileSize: 0.2 });
   const polymerFde = W('gun_polymer_fde', { wear: 0.4, wearColor: new THREE.Color(0.78, 0.68, 0.52), wearMetal: 0, wearRough: 0.5, cavity: 0.55 }, { tileSize: 0.2 });
   const rubber = W('rubber', { wear: 0.0, cavity: 0.4 }, { tileSize: 0.1 });
-  const glove = W('glove_leather', { wear: 0.25, wearColor: new THREE.Color(0.35, 0.33, 0.3), wearMetal: 0, wearRough: 0.7, cavity: 0.5, edgeLo: 120, edgeHi: 500 }, { tileSize: 0.15 });
+  const glove = W('glove_leather', { wear: 0.25, wearColor: new THREE.Color(0.35, 0.33, 0.3), wearMetal: 0, wearRough: 0.7, cavity: 0.5, edgeLo: 120, edgeHi: 500 }, { tileSize: 0.05 });
   const gloveKnuckle = W('rubber', { wear: 0.2, wearColor: new THREE.Color(0.18, 0.18, 0.18), wearMetal: 0, wearRough: 0.6, cavity: 0.6 }, { tileSize: 0.08, seed: 7 });
   const gloveFabric = W('cloth_black', { wear: 0, cavity: 0.5 }, { tileSize: 0.12 });
   const sleeve = W('cloth_multicam', { wear: 0, cavity: 0.6 }, { tileSize: 0.4 });

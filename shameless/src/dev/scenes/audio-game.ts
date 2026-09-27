@@ -11,9 +11,12 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   const ctx = await createGame({ container, uiRoot, shotMode: true, noEnemies: true });
   const buildMs = performance.now() - t0;
   window.__shameless.ctx = ctx;
-  await ctx.audio.resume();
-  await audioDebug.ready;
   const E = audioDebug.engine!;
+  let phase = 'resuming';
+  const tRes = performance.now();
+  let resumeMs = -1, banksMs = -1;
+  void ctx.audio.resume().then(() => { resumeMs = performance.now() - tRes; phase = 'banks'; return audioDebug.ready; })
+    .then(() => { banksMs = performance.now() - tRes; phase = 'script'; script(); });
   const errors: string[] = [];
   let maxVoices = 0;
   let updateMs = 0, updates = 0;
@@ -45,7 +48,6 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     try { origUpdate(dt); } catch (e) { errors.push(String(e)); }
     updateMs += performance.now() - a; updates++;
   };
-  script();
 
   let last = performance.now();
   const loop = (now: number) => {
@@ -59,7 +61,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   requestAnimationFrame(loop);
   window.__shameless.api = {
     stats: () => ({
-      buildMs, criticalMs: audioDebug.criticalMs, state: audioDebug.ctx?.state, sampleRate: audioDebug.ctx?.sampleRate, banks: E.banks.size,
+      phase, resumeMs, banksMs, buildMs, criticalMs: audioDebug.criticalMs, state: audioDebug.ctx?.state, sampleRate: audioDebug.ctx?.sampleRate, banks: E.banks.size,
       voices: E.voices.length, maxVoices, indoor: E.indoor, audioUpdateMsAvg: updateMs / Math.max(1, updates), errors,
       listener: { ...E.listener },
     }),

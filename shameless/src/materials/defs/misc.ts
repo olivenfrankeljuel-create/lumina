@@ -46,7 +46,7 @@ void gen(vec2 uv, inout Surf s) {
   float wearN = smoothstep(0.35, 0.8, fbm(uv + warp(uv, 2.0, 2, 0.1, 4.0), 2.0, 5, 5.0) * 0.5 + 0.5);
   col = mix(col, mix(col, cream * 0.95, 0.35) * 1.05, wearN * 0.7);
   // hairline cracks through a few tiles
-  float cr = cracks(uv, 6.0, 0.015, 0.35, 6.0) * tileM;
+  float cr = cracks(uv, 6.0, 0.008, 0.3, 6.0) * tileM;
   col *= 1.0 - cr * 0.5;
   vec3 grout = srgb(vec3(120, 114, 104)) * (0.8 + 0.3 * chipN);
   col = mix(grout, col * (0.85 + 0.15 * bevel), tileM);

@@ -44,24 +44,38 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   info.autoReset = false;
   let last = { calls: 0, triangles: 0 };
   const api = {
-    cam(x: number, y: number, z: number, yaw: number, pitch: number, fov = 70) { free = { x, y, z, yaw, pitch, fov }; target = null; },
-    look(x: number, y: number, z: number, tx: number, ty: number, tz: number, fov = 70) { free = { x, y, z, yaw: 0, pitch: 0, fov }; target = new THREE.Vector3(tx, ty, tz); },
+    cam(x: number, y: number, z: number, yaw: number, pitch: number, fov = 70) { free = { x, y, z, yaw, pitch, fov }; target = null; budget = BUDGET; },
+    look(x: number, y: number, z: number, tx: number, ty: number, tz: number, fov = 70) { free = { x, y, z, yaw: 0, pitch: 0, fov }; target = new THREE.Vector3(tx, ty, tz); budget = BUDGET; },
+    /** Render n more frames (SwiftShader is slow: frames are only rendered on demand). */
+    render(n = BUDGET) { budget = n; },
+    /** Continuous rendering (for interactive use in a real browser). */
+    live() { budget = Infinity; },
     shot(name: string) { const s = SHOTS[name]; if (!s) return `unknown shot ${name}`; api.cam(s[0], s[1], s[2], s[3], s[4], s[5] ?? 70); return name; },
     shots: () => Object.keys(SHOTS),
     player() { free = null; },
     stats() { return { ...last, world: (ctx.world as unknown as { stats: unknown }).stats, geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length }; },
   };
   window.__shameless.api = api as unknown as Record<string, unknown>;
-  const q = new URLSearchParams(location.search).get('shotname');
+  const params = new URLSearchParams(location.search);
+  const BUDGET = Number(params.get('budget') ?? 4);
+  let budget = params.has('live') ? Infinity : BUDGET;
+  const q = params.get('shotname');
   api.shot(q ?? 'street');
   let lastT = performance.now();
+  // Frames are rendered only while budget > 0; the frame counter advances only on idle frames so the
+  // screenshot tool's frame waits complete after the budgeted renders are done (keeps capture fast).
   const loop = (now: number) => {
     requestAnimationFrame(loop);
     const dt = window.__shameless.fixedDt ?? Math.min(0.05, (now - lastT) / 1000);
     lastT = now;
-    info.reset();
-    tick(ctx, dt);
-    last = { calls: info.render.calls, triangles: info.render.triangles };
+    if (budget > 0) {
+      budget--;
+      info.reset();
+      tick(ctx, dt);
+      last = { calls: info.render.calls, triangles: info.render.triangles };
+      if (budget === Infinity) window.__shameless.frame++;
+      return;
+    }
     window.__shameless.frame++;
   };
   requestAnimationFrame(loop);

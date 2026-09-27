@@ -278,59 +278,92 @@ function segmentClearance(j: Joint, sdf: SDF, toGun: THREE.Matrix4, squeeze: num
   return worst;
 }
 
-export interface SolveOpts { maxFlex?: [number, number, number]; minFlex?: number; step?: number }
+export interface SolveOpts { maxFlex?: [number, number, number]; minFlex?: number; step?: number; fitPalm?: boolean; palmGap?: number }
+
+const PALM_PTS: THREE.Vector3[] = [];
+for (const x of [-0.024, -0.008, 0.008, 0.024]) for (const z of [-0.028, -0.05, -0.072]) PALM_PTS.push(new THREE.Vector3(x, -0.0155, z));
+
+/** Moves the wrist along the palm normal so the palm just touches the surface (weapon space). */
+export function fitPalm(wrist: THREE.Matrix4, sdf: SDF, gap = -0.0015, mirrored = false): THREE.Matrix4 {
+  const m = wrist.clone();
+  const nrm = new THREE.Vector3().setFromMatrixColumn(m, 1).normalize().negate(); // palmar direction
+  const p = new THREE.Vector3();
+  const mm = new THREE.Matrix4();
+  for (let it = 0; it < 6; it++) {
+    mm.copy(m);
+    if (mirrored) mm.multiply(new THREE.Matrix4().makeScale(-1, 1, 1));
+    let dmin = Infinity;
+    for (const q of PALM_PTS) { p.copy(q).applyMatrix4(mm); dmin = Math.min(dmin, sdf(p)); }
+    const move = dmin - gap;
+    if (Math.abs(move) < 1e-4) break;
+    const t = new THREE.Vector3().setFromMatrixPosition(m).addScaledVector(nrm, move);
+    m.setPosition(t);
+  }
+  return m;
+}
 
 /**
  * Solves finger (and optionally thumb) curl for `hand` placed at weapon-space wrist matrix `wrist`.
- * The hand root must not have a parent (it is posed directly in weapon space during the solve).
+ * Each joint curls from open until its segment (and the rest of the finger) touches the surface;
+ * if the finger never touches it keeps a relaxed curl. Returns the pose and the (palm-fitted) wrist.
  */
-export function solveGrip(hand: HandRig, wristMatrix: THREE.Matrix4, grip: HandGrip, base: HandPose = POSE_FLAT, opts: SolveOpts = {}): HandPose {
+export function solveGrip(hand: HandRig, wristIn: THREE.Matrix4, grip: HandGrip, base: HandPose = POSE_FLAT, opts: SolveOpts = {}): { pose: HandPose; wrist: THREE.Matrix4 } {
+  const wrist = opts.fitPalm === false ? wristIn.clone() : fitPalm(wristIn, grip.sdf, opts.palmGap ?? -0.0015, hand.mirrored);
   const pose = clonePose(base);
   if (grip.spread !== undefined) for (let i = 0; i < 4; i++) pose.s[i] = base.s[i] * grip.spread;
   const squeeze = grip.squeeze ?? 0.2;
   const maxF = opts.maxFlex ?? [1.55, 1.75, 1.35];
-  const minF = opts.minFlex ?? -0.15;
-  const step = opts.step ?? 0.025;
-  const parent = hand.root.parent;
-  hand.root.matrix.copy(wristMatrix);
+  const minF = opts.minFlex ?? -0.2;
+  const step = opts.step ?? 0.02;
+  const prevMatrix = hand.root.matrix.clone();
+  const prevParent = hand.root.parent;
+  if (prevParent) prevParent.remove(hand.root);
+  hand.root.matrix.copy(wrist);
   if (hand.mirrored) hand.root.matrix.multiply(new THREE.Matrix4().makeScale(-1, 1, 1));
   const identity = new THREE.Matrix4();
-  // Solve in weapon space: treat the hand root matrix as world
-  const solveChain = (chain: Joint[], setAngle: (j: number, a: number) => void, fixed: number[] | null, maxes: number[]) => {
-    if (fixed) { fixed.forEach((a, j) => setAngle(j, a)); return; }
+  const relaxed = [0.45, 0.55, 0.35];
+  const solveChain = (chain: Joint[], setAngle: (j: number, a: number) => void, maxes: number[]) => {
     for (let j = 0; j < chain.length; j++) {
       for (let k = j + 1; k < chain.length; k++) setAngle(k, 0);
-      let best = minF;
-      for (let a = minF; a <= maxes[j]; a += step) {
+      const clear = (a: number) => {
         setAngle(j, a);
         hand.root.updateMatrixWorld(true);
-        let clear = Infinity;
-        for (let k = j; k < chain.length; k++) clear = Math.min(clear, segmentClearance(chain[k], grip.sdf, identity, squeeze));
-        if (clear < 0) break;
-        best = a;
+        let c = Infinity;
+        for (let k = j; k < chain.length; k++) c = Math.min(c, segmentClearance(chain[k], grip.sdf, identity, squeeze));
+        return c;
+      };
+      let best: number | null = null;
+      let started = clear(minF) >= 0;
+      let bestC = -Infinity, bestA = minF;
+      for (let a = minF; a <= maxes[j] + 1e-6; a += step) {
+        const c = clear(a);
+        if (c > bestC) { bestC = c; bestA = a; }
+        if (c >= 0) { started = true; best = a; }
+        else if (started) break; // contact reached while curling
       }
+      if (best === null) best = bestA; // always penetrating: least-bad angle
+      else if (best >= maxes[j] - step * 0.5) best = Math.min(best, relaxed[j] + 0.4); // never touched: stay relaxed-ish
       setAngle(j, best);
     }
-    // natural coupling: distal follows middle a bit
     hand.root.updateMatrixWorld(true);
   };
   const fixedIndex = grip.index ?? null;
   for (let i = 0; i < 4; i++) {
     const set = (j: number, a: number) => { pose.f[i][j] = a; hand.applyPose(pose); };
-    solveChain(hand.fingers[i], set, i === 0 ? fixedIndex : null, maxF);
+    if (i === 0 && fixedIndex) { fixedIndex.forEach((a, j) => set(j, a)); continue; }
+    solveChain(hand.fingers[i], set, maxF);
   }
   if (grip.thumb) {
     for (let j = 0; j < 5; j++) pose.t[j] = grip.thumb[j];
     hand.applyPose(pose);
   } else {
-    // solve thumb mcp/ip only, keep base cmc
     const set = (j: number, a: number) => { if (j === 0) pose.t[2] = a; else pose.t[3] = a; hand.applyPose(pose); };
-    const chain = [hand.thumb[1], hand.thumb[2]];
-    solveChain(chain, set, null, [1.0, 1.2]);
+    solveChain([hand.thumb[1], hand.thumb[2]], set, [1.0, 1.2]);
   }
   hand.applyPose(pose);
-  if (!parent) hand.root.matrix.identity();
-  return pose;
+  hand.root.matrix.copy(prevMatrix);
+  if (prevParent) prevParent.add(hand.root);
+  return { pose, wrist };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -352,7 +385,7 @@ export class ArmRig {
     const cuff = latheZ([[0.0, -0.05], [0.031, -0.045], [0.0305, -0.012], [0.0295, 0.0], [0.0272, 0.010], [0.0215, 0.012]], 28, 0.0);
     cuff.scale(1.12, 0.88, 1);
     const cuffStrap = xform(roundBox(0.040, 0.006, 0.020, 0.002), 0, 0.0265, 0.024);
-    this.forearm.add(new THREE.Mesh(finish(merge([cuff]), 60), mats.gloveFabric));
+    this.forearm.add(new THREE.Mesh(finish(merge([cuff]), 60), mats.glove));
     this.forearm.add(new THREE.Mesh(finish(cuffStrap, 50), mats.gloveKnuckle));
     // sleeve
     const sl = sleeveGeometry(this.fLen + 0.05, 0.041, 0.052, left ? 2.1 : 0.7);
@@ -419,6 +452,15 @@ export function wristFrame(pos: THREE.Vector3, fingerDir: THREE.Vector3, dorsal:
   const x = new THREE.Vector3().crossVectors(dorsal, z).normalize();
   const y = new THREE.Vector3().crossVectors(z, x).normalize();
   return out.makeBasis(x, y, z).setPosition(pos);
+}
+
+/**
+ * Wrist transform (Xf) from a palm contact point on the weapon, the finger direction and the back-of-hand normal.
+ * The palm center sits 4.5cm down the hand from the wrist and 1.6cm palmar of the hand axis.
+ */
+export function gripWrist(contact: THREE.Vector3, fingerDir: THREE.Vector3, dorsal: THREE.Vector3): [number, number, number, number, number, number] {
+  const m = wristFrame(contact, fingerDir, dorsal).multiply(new THREE.Matrix4().makeTranslation(0, 0.016, 0.045));
+  return matrixToXf(m);
 }
 
 export function matrixToXf(m: THREE.Matrix4): [number, number, number, number, number, number] {

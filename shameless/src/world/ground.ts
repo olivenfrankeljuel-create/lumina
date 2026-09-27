@@ -111,7 +111,7 @@ export function sandDrift(w: WCtx, x: number, z: number, len: number, depth: num
   // plane spans x in [-len/2, len/2], z in [-depth/2, depth/2]; wall at z=-depth/2
   const seed = rng.range(0, 100);
   displace(g, (v) => {
-    const t = (v.z + depth / 2) / depth; // 0 at wall, 1 at outer edge
+    const t = Math.min(1, Math.max(0, (v.z + depth / 2) / depth)); // 0 at wall, 1 at outer edge
     const along = (v.x + len / 2) / len;
     const taper = Math.sin(Math.PI * Math.min(1, Math.max(0, along))) ** 0.6;
     const n = fbm(v.x * 0.8 + seed, v.z * 0.8, 3, 3);

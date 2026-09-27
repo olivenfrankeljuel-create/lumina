@@ -17,7 +17,7 @@ void gen(vec2 uv, inout Surf s) {
   vec2 cq = uv + warp(uv, 12.0, 3, 0.006, 3.0);
   float cn = fbm(cq, 10.0, 7, 4.0) * 0.5 + 0.5;
   float wearZone = smoothstep(0.45, 0.8, fbm(uv, 3.0, 4, 5.0) * 0.5 + 0.5);
-  float t = 0.72 - 0.12 * wearZone;
+  float t = 0.7 - 0.12 * wearZone;
   float chip = smoothstep(t, t + 0.006, cn);
   float primer = smoothstep(t + 0.01, t + 0.016, cn);
   float rust = smoothstep(t + 0.03, t + 0.05, cn + 0.02 * grain);
@@ -44,8 +44,16 @@ void gen(vec2 uv, inout Surf s) {
     float seg = smoothstep(0.62, 0.8, noiseT(uv + dir * 0.1, vec2(12.0), 11.0 + float(i)) * 0.5 + 0.5);
     sc = max(sc, (1.0 - smoothstep(0.0, 0.012, ln)) * seg);
   }
-  vec3 pc = mix(paintC, fadedC, smoothstep(0.3, 0.8, fbm(uv + warp(uv, 4.0, 2, 0.05, 12.0), 4.0, 5, 13.0) * 0.5 + 0.5));
-  pc *= 0.94 + 0.08 * peel;
+  // fading: fine vertical weathering + brushed-on touch-up patches of a slightly different green
+  float fadeN = fbm(uv + warp(uv, 4.0, 2, 0.02, 12.0), vec2(8.0, 3.0), 5, 0.5, 13.0) * 0.5 + 0.5;
+  vec3 pc = mix(paintC, fadedC, smoothstep(0.35, 0.9, fadeN) * 0.55);
+  vec2 tq = fract(uv * vec2(2.0, 3.0));
+  vec3 th = hash3(floor(uv * vec2(2.0, 3.0)), vec2(2.0, 3.0), 30.0);
+  vec2 tr = abs(tq - 0.5 - (th.xy - 0.5) * 0.4) - vec2(0.12 + 0.12 * th.z, 0.08 + 0.1 * th.x);
+  float touch = (1.0 - smoothstep(-0.01, 0.01, max(tr.x, tr.y) + fbm(uv, 30.0, 3, 31.0) * 0.03)) * step(0.6, th.z);
+  float brushM = fbm(uv, vec2(160.0, 12.0), 3, 0.5, 32.0) * 0.5 + 0.5;
+  pc = mix(pc, paintC * vec3(0.92, 0.97, 0.95) * (0.96 + 0.06 * brushM), touch);
+  pc *= 0.96 + 0.05 * peel;
   vec3 primerC = srgb(vec3(126, 64, 44));
   vec3 rustC = mix(srgb(vec3(104, 52, 26)), srgb(vec3(150, 82, 40)), fbm(uv, 90.0, 3, 14.0) * 0.5 + 0.5);
   vec3 steelC = vec3(0.52, 0.52, 0.53);
@@ -57,7 +65,7 @@ void gen(vec2 uv, inout Surf s) {
   col = mix(col, pc * 1.25 + 0.02, sc * (1.0 - chip) * 0.6);
   col *= 1.0 - (1.0 - rivetDome) * rivet * 0.2;
   float metal = steel * 0.9;
-  float h = 0.6 + peel * 0.02 + grain * 0.01 - chip * 0.08 - rust * 0.02 * grain - steel * 0.02 - sc * 0.04;
+  float h = 0.6 + peel * 0.02 + grain * 0.01 + touch * (0.03 + brushM * 0.02) - chip * 0.08 - rust * 0.02 * grain - steel * 0.02 - sc * 0.04;
   h += rivet * rivetDome * 0.35;
   h += (1.0 - smoothstep(0.0, 0.003, dv)) * -0.1;
   s.albedo = col;
@@ -79,96 +87,106 @@ export const metal_painted_blue: MatDef = {
 };
 
 export const metal_rusty: MatDef = {
-  surface: 'metal', tile: 1.5, depth: 0.004, wear: 0.2, dust: 0.2, macro: 0.08, cavity: 1.2,
+  surface: 'metal', tile: 1.5, depth: 0.004, wear: 0.2, dust: 0.2, macro: 0.08, cavity: 1.1,
   glsl: /* glsl */ `
+// Heavily corroded painted steel: old dark rust, active orange blooms, lifting scale, blistered paint remnants.
 void gen(vec2 uv, inout Surf s) {
-  vec2 q = uv + warp(uv, 6.0, 4, 0.02, 1.0);
-  float r1 = fbm(q, 6.0, 7, 2.0) * 0.5 + 0.5;
-  float r2 = fbm(uv, 48.0, 4, 3.0) * 0.5 + 0.5;
-  float grain = fbm(uv, 420.0, 2, 4.0) * 0.5 + 0.5;
-  // pitting
-  vec3 pit = spots(uv, 140.0, 0.45, 0.15, 0.45, 5.0);
-  vec3 pit2 = spots(uv + 0.3, 50.0, 0.25, 0.2, 0.5, 6.0);
-  // flaking scale (voronoi flakes lifting)
-  vec4 fl = voronoiT(uv + warp(uv, 12.0, 2, 0.005, 7.0), 30.0, 0.9, 8.0);
-  float flakeZone = smoothstep(0.55, 0.75, r1);
-  float flake = smoothstep(0.02, 0.08, fl.x) * flakeZone;
-  float flakeEdge = (1.0 - smoothstep(0.0, 0.03, fl.x)) * flakeZone;
-  // remaining paint islands
-  float paintM = smoothstep(0.32, 0.3, r1) * (1.0 - smoothstep(0.6, 0.62, r2));
-  vec3 dark = srgb(vec3(72, 40, 24));
-  vec3 mid = srgb(vec3(122, 62, 30));
-  vec3 orange = srgb(vec3(166, 92, 42));
-  vec3 col = mix(dark, mid, smoothstep(0.25, 0.6, r1));
-  col = mix(col, orange, smoothstep(0.55, 0.85, r2) * 0.8);
-  col *= 0.85 + 0.25 * grain;
-  col = mix(col, dark * 0.8, pit.x * 0.7 + pit2.x * 0.5);
-  col = mix(col, mid * (0.9 + 0.3 * (fl.y)), flake * 0.5);
-  col *= 1.0 - flakeEdge * 0.4;
-  vec3 paint = srgb(vec3(86, 96, 78)) * (0.9 + 0.2 * grain);
+  vec2 q = uv + warp(uv, 5.0, 4, 0.025, 1.0);
+  float big = fbm(q, 4.0, 7, 2.0) * 0.5 + 0.5;          // paint vs rust coverage
+  float act = fbm(uv + warp(uv, 10.0, 2, 0.01, 3.0), 10.0, 6, 4.0) * 0.5 + 0.5; // active rust bloom
+  float grain = fbm(uv, 420.0, 2, 5.0) * 0.5 + 0.5;
+  float meso = fbm(uv, 60.0, 4, 6.0) * 0.5 + 0.5;
+  // pitting, clustered
+  float pitZone = smoothstep(0.45, 0.7, fbm(uv, 8.0, 4, 7.0) * 0.5 + 0.5);
+  vec3 pit = spots(uv, 160.0, 0.35 * pitZone, 0.12, 0.4, 8.0);
+  // scale flakes
+  vec4 fl = voronoiT(uv + warp(uv, 12.0, 2, 0.005, 9.0), 36.0, 0.9, 10.0);
+  float flakeZone = smoothstep(0.55, 0.7, big) * smoothstep(0.4, 0.6, act);
+  float flakeEdge = (1.0 - smoothstep(0.0, 0.04, fl.x)) * flakeZone;
+  float flakeLift = smoothstep(0.02, 0.3, fl.x) * flakeZone * fl.y;
+  // paint remnants with rust bleeding at the edges and blisters
+  float paintT = 0.34;
+  float paintM = 1.0 - smoothstep(paintT - 0.005, paintT + 0.005, big + (meso - 0.5) * 0.08);
+  float paintEdge = (1.0 - smoothstep(0.0, 0.05, abs(big - paintT))) * (1.0 - paintM);
+  vec3 blis = spots(uv, 120.0, 0.25, 0.2, 0.5, 11.0);
+  vec3 darkR = srgb(vec3(66, 44, 32));
+  vec3 midR = srgb(vec3(104, 64, 40));
+  vec3 orgR = srgb(vec3(138, 76, 38));
+  vec3 col = mix(darkR, midR, smoothstep(0.3, 0.7, meso));
+  col = mix(col, orgR * (0.85 + 0.3 * grain), smoothstep(0.5, 0.8, act) * 0.7);
+  col = mix(col, srgb(vec3(120, 88, 62)), smoothstep(0.6, 0.9, meso) * 0.25); // dusty, dry rust
+  col *= 0.88 + 0.2 * grain;
+  col = mix(col, darkR * 0.7, pit.x * 0.8);
+  col *= 1.0 - flakeEdge * 0.35;
+  col = mix(col, orgR, paintEdge * 0.35);
+  vec3 paint = srgb(vec3(104, 112, 104)) * (0.9 + 0.15 * grain) * (0.9 + 0.1 * meso);
+  paint = mix(paint, orgR, blis.x * 0.6);
+  float runs = streaks(uv, 30.0, 12.0);
   col = mix(col, paint, paintM);
-  float h = 0.55 + r2 * 0.1 + grain * 0.06 - pit.x * 0.2 - pit2.x * 0.25 + flake * (0.06 + fl.y * 0.06) + paintM * 0.08;
+  col = mix(col, col * vec3(0.8, 0.62, 0.48), runs * 0.6 * paintM);
+  float h = 0.5 + meso * 0.12 + grain * 0.05 - pit.x * 0.25 + flakeLift * 0.12 - flakeEdge * 0.05;
+  h = mix(h, 0.66 + blis.x * 0.08 + grain * 0.02, paintM);
   s.albedo = col;
   s.height = h;
   s.metal = 0.0;
-  s.rough = clamp(0.8 + grain * 0.12 - paintM * 0.3 - smoothstep(0.7, 0.9, r2) * 0.1, 0.0, 1.0);
-  s.ao = 1.0 - flakeEdge * 0.3;
-  s.mask = clamp(pit.x + pit2.x + flakeEdge, 0.0, 1.0);
+  s.rough = clamp(mix(0.84 + grain * 0.1 - smoothstep(0.6, 0.8, act) * 0.06, 0.58 + grain * 0.08, paintM), 0.0, 1.0);
+  s.ao = 1.0 - flakeEdge * 0.25;
+  s.mask = clamp(pit.x + flakeEdge + paintEdge * 0.5, 0.0, 1.0);
 }
 `,
 };
 
 export const metal_corrugated: MatDef = {
-  surface: 'metal', tile: 1.52, depth: 0.018, pom: 0.016, wear: 0.25, dust: 0.3, macro: 0.08, cavity: 0.6,
+  surface: 'metal', tile: 1.52, depth: 0.018, pom: 0.016, wear: 0.25, dust: 0.3, macro: 0.08, cavity: 0.5,
   glsl: /* glsl */ `
-// Galvanized corrugated sheet, 76mm pitch (20 per tile), vertical corrugations, nail rows, rust runs.
+// Weathered galvanized corrugated sheet, 76mm pitch (20 per tile), vertical corrugations, one nail row per tile,
+// rust runs from the nails, dull oxidised zinc, dents.
 void gen(vec2 uv, inout Surf s) {
-  float ph = uv.x * 20.0;
+  float dent = fbm(uv, 3.0, 4, 20.0);
+  float ph = uv.x * 20.0 + fbm(uv, vec2(2.0, 3.0), 3, 0.5, 21.0) * 0.06;
   float prof = 0.5 + 0.5 * cos(ph * TAU);  // 1 at crest
   float grain = fbm(uv, 500.0, 2, 1.0) * 0.5 + 0.5;
-  // zinc spangle crystals
-  vec4 sp = worleyT(uv, 70.0, 1.0, 2.0);
-  float spangle = sp.z;
-  // white rust (zinc oxide) and red rust
+  float mottle = fbm(uv + warp(uv, 6.0, 2, 0.02, 2.0), 12.0, 5, 3.0) * 0.5 + 0.5;
+  vec4 sp = worleyT(uv, 60.0, 1.0, 2.0);           // zinc spangle (mostly a roughness effect)
   vec2 q = uv + warp(uv, 4.0, 3, 0.03, 3.0);
-  float ox = smoothstep(0.55, 0.75, fbm(q, 5.0, 6, 4.0) * 0.5 + 0.5);
-  // nails: every other crest at v = 0.25 and 0.75
-  float cx = (floor(ph) + 0.0) ;
-  vec2 np = vec2((fract(ph) - 0.0) , 0.0);
-  float ndx = min(fract(ph), 1.0 - fract(ph)) / 20.0 * 1.52;
-  float nrow = min(abs(fract(uv.y * 2.0) - 0.5), 1.0) / 2.0 * 1.52;
+  float ox = smoothstep(0.5, 0.8, fbm(q, 5.0, 6, 4.0) * 0.5 + 0.5);
+  // nail row at v = 0.85 on every other crest
   float oddCrest = step(0.5, mod(floor(ph + 0.5), 2.0));
-  float nd = length(vec2(ndx, nrow));
+  float ndx = min(fract(ph), 1.0 - fract(ph)) / 20.0 * 1.52;
+  float dy = (uv.y - 0.85) * 1.52;
+  float nd = length(vec2(ndx, dy));
   float nail = (1.0 - smoothstep(0.004, 0.006, nd)) * oddCrest;
+  float washer = (1.0 - smoothstep(0.0065, 0.0075, nd)) * oddCrest;
   float nailRust = (1.0 - smoothstep(0.006, 0.02, nd)) * oddCrest;
-  // rust runs downward from nails: below the nail row (v decreasing from row)
-  float below = fract(uv.y * 2.0) - 0.5; // <0 below row
-  float runW = 0.004 + 0.01 * (noiseT(uv, vec2(20.0, 8.0), 5.0) * 0.5 + 0.5);
-  float runLen = 0.15 + 0.25 * hash1(vec2(floor(ph + 0.5), floor(uv.y * 2.0)), vec2(20.0, 2.0), 6.0);
-  float run = (1.0 - smoothstep(runW * 0.3, runW, ndx + noiseT(uv, vec2(40.0, 16.0), 7.0) * 0.002)) * step(below, 0.0) * (1.0 - smoothstep(0.0, runLen, -below)) * oddCrest;
-  run *= 0.5 + 0.5 * (noiseT(uv, vec2(20.0, 60.0), 8.0) * 0.5 + 0.5);
-  // general red rust in troughs & overlap bottom edge
-  float rustN = fbm(uv + warp(uv, 8.0, 2, 0.01, 9.0), 8.0, 6, 10.0) * 0.5 + 0.5;
-  float rust = smoothstep(0.62, 0.75, rustN + (1.0 - prof) * 0.12 + smoothstep(0.08, 0.0, uv.y) * 0.2);
-  // streaks from rain
+  // rust runs from nails
+  float below = -dy;
+  float runW = 0.006 + 0.016 * (noiseT(uv, vec2(20.0, 8.0), 5.0) * 0.5 + 0.5) * clamp(below * 3.0, 0.0, 1.0);
+  float runLen = 0.25 + 0.6 * hash1(vec2(floor(ph + 0.5), 0.0), vec2(20.0, 1.0), 6.0);
+  float run = (1.0 - smoothstep(runW * 0.1, runW, ndx + noiseT(uv, vec2(40.0, 16.0), 7.0) * 0.002)) * step(0.0, below) * (1.0 - smoothstep(0.0, runLen, below)) * oddCrest;
+  run *= 0.4 + 0.6 * (noiseT(uv, vec2(20.0, 60.0), 8.0) * 0.5 + 0.5);
+  // rust blooms, concentrated in troughs, speckled edges
+  float rustN = fbm(uv + warp(uv, 8.0, 2, 0.01, 9.0), 6.0, 6, 10.0) * 0.5 + 0.5;
+  float rustFine = fbm(uv, 90.0, 3, 12.0) * 0.5 + 0.5;
+  float rust = smoothstep(0.68, 0.78, rustN + (1.0 - prof) * 0.05 + (rustFine - 0.5) * 0.2) * (0.5 + 0.5 * rustFine);
   float st = streaks(uv, 40.0, 11.0);
-  vec3 zinc = mix(vec3(0.50, 0.52, 0.53), vec3(0.62, 0.63, 0.64), spangle) * (0.9 + 0.15 * grain);
-  vec3 oxC = srgb(vec3(178, 180, 176));
-  vec3 rustC = mix(srgb(vec3(112, 58, 30)), srgb(vec3(156, 90, 44)), rustN);
+  vec3 zinc = vec3(0.47, 0.48, 0.49) * (0.86 + 0.18 * mottle) * (0.95 + 0.08 * grain) * (0.97 + 0.06 * sp.z);
+  vec3 oxC = srgb(vec3(168, 170, 166));
+  vec3 rustC = mix(srgb(vec3(82, 50, 34)), srgb(vec3(124, 74, 42)), rustFine);
   vec3 col = zinc;
   float metal = 1.0;
-  col = mix(col, oxC * (0.85 + 0.2 * grain), ox * 0.8);
-  metal = mix(metal, 0.0, ox * 0.8);
-  col = mix(col, rustC, max(rust, max(run, nailRust)));
-  metal *= 1.0 - max(rust, max(run, nailRust));
-  col = mix(col, col * 0.7, st * 0.4);
-  col = mix(col, vec3(0.35), nail);
+  col = mix(col, oxC * (0.85 + 0.2 * grain), ox * 0.5);
+  metal = mix(metal, 0.0, ox * 0.5);
+  float r = max(rust, max(run * 0.85, nailRust));
+  col = mix(col, rustC, r);
+  metal *= 1.0 - r;
+  col = mix(col, col * vec3(0.72, 0.68, 0.64), st * 0.5);
+  col = mix(col, vec3(0.3, 0.3, 0.31), washer);
   s.albedo = col;
-  s.height = prof * 0.9 + grain * 0.02 + nail * 0.08 - rust * 0.01;
+  s.height = prof * 0.8 + dent * 0.12 + grain * 0.015 + washer * 0.06 + nail * 0.04 - rust * 0.01;
   s.metal = metal;
-  s.rough = clamp(0.42 + spangle * 0.12 + grain * 0.1 + ox * 0.35 + rust * 0.4 + st * 0.1, 0.0, 1.0);
+  s.rough = clamp(0.5 + sp.z * 0.1 + grain * 0.08 + (1.0 - mottle) * 0.08 + ox * 0.3 + r * 0.35 + st * 0.08, 0.0, 1.0);
   s.ao = 1.0;
-  s.mask = clamp((1.0 - prof) * 0.6 + run + st * 0.5, 0.0, 1.0);
+  s.mask = clamp((1.0 - prof) * 0.5 + run + st * 0.5, 0.0, 1.0);
 }
 `,
 };

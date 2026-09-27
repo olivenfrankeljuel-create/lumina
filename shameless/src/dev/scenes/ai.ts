@@ -18,11 +18,11 @@ import { buildCharacter, PRESET_VARIANTS, characterCacheStats, buildStats } from
  */
 export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   const params = new URLSearchParams(location.search);
-  const ctx = params.has('full') ? await createGame({ container, uiRoot, shotMode: true, noEnemies: true }) : await createLite(container);
+  const ctx = params.has('full') ? await createGame({ container, uiRoot, shotMode: true, noEnemies: true }) : params.has('clay') ? await createClay(container) : await createLite(container);
   window.__shameless.ctx = ctx;
   await simplifierReady;
   const t0 = performance.now();
-  const chars = PRESET_VARIANTS.map((v, i) => {
+  const chars = (params.has('nochars') ? [] : PRESET_VARIANTS).map((v, i) => {
     const c = buildCharacter(ctx, v);
     c.root.position.set((i - 1.5) * 1.1, 0, -4);
     ctx.scene.add(c.root);
@@ -35,17 +35,26 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     chars,
   };
   window.__shameless.api = api as unknown as Record<string, unknown>;
+  const dbg = { err: '', tickMs: 0, ticks: 0 };
+  (window as unknown as { __aiDbg: unknown }).__aiDbg = dbg;
   let last = performance.now();
   const loop = (now: number) => {
     requestAnimationFrame(loop);
     const dt = window.__shameless.fixedDt ?? Math.min(0.05, (now - last) / 1000);
     last = now;
-    tickWithCamera(ctx, dt, () => {
-      ctx.camera.position.copy(cam.pos);
-      ctx.camera.lookAt(cam.look);
-      ctx.camera.fov = cam.fov;
-      ctx.camera.updateProjectionMatrix();
-    });
+    const tt = performance.now();
+    try {
+      tickWithCamera(ctx, dt, () => {
+        ctx.camera.position.copy(cam.pos);
+        ctx.camera.lookAt(cam.look);
+        ctx.camera.fov = cam.fov;
+        ctx.camera.updateProjectionMatrix();
+      });
+    } catch (e) {
+      dbg.err = String((e as Error)?.stack ?? e);
+    }
+    dbg.tickMs = performance.now() - tt;
+    dbg.ticks++;
     window.__shameless.frame++;
   };
   requestAnimationFrame(loop);
@@ -131,4 +140,70 @@ function buildCourtyard(ctx: GameContext): World {
     groundHeight: (x, z) => (Math.abs(x) < 80 && Math.abs(z) < 80 ? 0 : null),
     update() {},
   };
+}
+
+/** Fast-iteration context: plain forward renderer, flat library-free materials, simple lights. */
+async function createClay(container: HTMLElement): Promise<GameContext> {
+  const quality = { tier: 1 as const, pixelRatio: 1, shadowMapSize: 2048 };
+  const renderer = createRenderer(container, quality);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x8a9199);
+  const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.05, 500);
+  scene.add(camera);
+  const ctx = { renderer, scene, camera, quality, input: new Input(renderer.domElement), events: new EventBus(), time: 0 } as unknown as GameContext;
+  const COL: Record<string, number> = {
+    cloth_multicam: 0x8c8266, cloth_olive: 0x5d5e48, cloth_black: 0x2a2a2a, glove_leather: 0x5a4a3a, skin: 0xc79a7c, rubber: 0x2c2b29,
+    canvas: 0x9a8d70, plastic_black: 0x262626, gun_polymer_black: 0x222222, metal_painted_green: 0x4f5540, glass: 0x303a38, gun_parkerized: 0x2e2e2c, gun_wood: 0x7a4a28, concrete_floor: 0x8d8a84,
+  };
+  const cache = new Map<string, THREE.MeshStandardMaterial>();
+  ctx.materials = {
+    envMap: null,
+    async init() {},
+    get(name) {
+      let m = cache.get(name);
+      if (!m) { m = new THREE.MeshStandardMaterial({ color: COL[name] ?? 0x808080, roughness: name === 'glass' ? 0.1 : 0.85 }); cache.set(name, m); }
+      return m;
+    },
+    surfaceOf() { return 'concrete'; },
+  };
+  scene.add(new THREE.HemisphereLight(0xcfd8e8, 0x5a5048, 1.1));
+  const sun = new THREE.DirectionalLight(0xfff2e0, 2.6);
+  sun.position.set(-3, 6, 5); sun.castShadow = true;
+  sun.shadow.mapSize.setScalar(2048);
+  Object.assign(sun.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6, near: 0.5, far: 30 });
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+  sun.target.position.set(0, 0, -4);
+  scene.add(sun, sun.target);
+  const rim = new THREE.DirectionalLight(0xbcd0ff, 1.4);
+  rim.position.set(4, 3, -9); rim.target.position.set(0, 1, -4);
+  scene.add(rim, rim.target);
+  ctx.pipeline = {
+    viewmodelScene: new THREE.Scene(), viewmodelCamera: new THREE.PerspectiveCamera(), sun,
+    render() { renderer.render(scene, camera); }, setSize() {}, setADS() {}, setDamage() {}, flash() {},
+    setupShadows(o) { o.traverse((c) => { if ((c as THREE.Mesh).isMesh) c.castShadow = c.receiveShadow = true; }); }, dispose() {},
+  };
+  ctx.physics = await createPhysics(ctx);
+  const root = new THREE.Group();
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), ctx.materials.get('concrete_floor'));
+  ground.receiveShadow = true;
+  root.add(ground);
+  scene.add(root);
+  ctx.physics.addStatic(root);
+  ctx.world = { root, playerSpawns: [{ position: new THREE.Vector3(), yaw: 0 }], enemySpawns: [new THREE.Vector3(0, 0, -20)], coverPoints: [], groundHeight: () => 0, update() {} };
+  const pos = new THREE.Vector3();
+  ctx.player = {
+    position: pos, velocity: new THREE.Vector3(), eyeHeight: 1.65, yaw: 0, pitch: 0, grounded: true, sprinting: false, crouched: false, sliding: false, lean: 0,
+    health: 100, maxHealth: 100, alive: true, addRecoil() {}, addCameraShake() {}, damage(a) { ctx.player.health -= a; }, update() {}, respawn() {},
+  };
+  ctx.weapons = { currentId: 'm4', ammoInMag: 30, magSize: 30, reserveAmmo: 90, adsAmount: 0, reloading: false, fovTarget: 75, spread: 0, update() {} };
+  ctx.enemies = { enemies: [], applyHit() {}, update() {} };
+  ctx.fx = { update() {} };
+  ctx.audio = { async resume() {}, setMasterVolume() {}, update() {} };
+  ctx.hud = { update() {}, showMenu() {}, hideMenu() {} };
+  const onResize = () => { camera.aspect = container.clientWidth / container.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(container.clientWidth, container.clientHeight); };
+  window.addEventListener('resize', onResize);
+  onResize();
+  return ctx;
 }

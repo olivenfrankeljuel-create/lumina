@@ -5,6 +5,7 @@ import {
   P2, shape, path, rrectShape, rrectPath, circlePath, extrudeSide, extrudeTop, extrudeFront, latheZ, latheAxis,
   csgSub, box, roundBox, chamferBox, xform, cylinderBetween, finish, merge,
 } from './geom';
+import { gripWrist } from './arms';
 import { PartBuilder, WeaponModel, sdEllipticCapsule, sdRoundBox, sdUnion, SDF, sdOrientedBox } from './model';
 
 /**
@@ -14,11 +15,13 @@ import { PartBuilder, WeaponModel, sdEllipticCapsule, sdRoundBox, sdUnion, SDF, 
 
 // Key dimensions (meters)
 const RAIL_TOP = 0.0263;
+const WIN_CY = 0.0302; // holo window center above the rail top (sight line)
 const UPPER_TOP = 0.0175;
 const SEAM = -0.0115;
 const UPPER_LEN = 0.178;
 const HG_REAR = -0.1805, HG_FRONT = -0.47;
 const MUZZLE_Z = -0.556;
+const GRIP_RAKE = 0.35;
 
 /** Picatinny rail: continuous spine + individual teeth. z0 (rear) -> z1 (front, more negative). */
 export function picatinny(z0: number, z1: number, base = UPPER_TOP): THREE.BufferGeometry[] {
@@ -55,8 +58,8 @@ export function cartridge556(): { brass: THREE.BufferGeometry; tip: THREE.Buffer
 function buildMagazine(mats: GunMaterials, loaded: boolean): THREE.Group {
   const pb = new PartBuilder(mats);
   // Curved STANAG/PMAG body in mag-local space: origin = rear-top of body, u forward, v up.
-  const K = 0.95; // curvature coefficient
-  const H = 0.172;
+  const K = 0.85; // curvature coefficient
+  const H = 0.19;
   const D = 0.0635;
   const ur = (v: number) => K * v * v;
   const front: P2[] = [], rear: P2[] = [];
@@ -72,7 +75,7 @@ function buildMagazine(mats: GunMaterials, loaded: boolean): THREE.Group {
   // Ribs: horizontal texture band near the base (both sides) + vertical stiffener rib
   for (const side of [-1, 1]) {
     for (let k = 0; k < 4; k++) {
-      const v0 = -0.118 - k * 0.0105;
+      const v0 = -0.136 - k * 0.0105;
       const pts: P2[] = [];
       const vA = v0, vB = v0 - 0.0045;
       pts.push([ur(vA) + 0.008, vA], [D + ur(vA) - vA * 0.012 - 0.008, vA], [D + ur(vB) - vB * 0.012 - 0.008, vB], [ur(vB) + 0.008, vB]);
@@ -81,8 +84,8 @@ function buildMagazine(mats: GunMaterials, loaded: boolean): THREE.Group {
     // vertical spine rib along the rear (slightly inset)
     const rib: P2[] = [];
     const M = 10;
-    for (let i = 0; i <= M; i++) { const v = -0.012 - (0.095 * i) / M; rib.push([ur(v) + 0.0105, v]); }
-    for (let i = M; i >= 0; i--) { const v = -0.012 - (0.095 * i) / M; rib.push([ur(v) + 0.0145, v]); }
+    for (let i = 0; i <= M; i++) { const v = -0.012 - (0.11 * i) / M; rib.push([ur(v) + 0.0105, v]); }
+    for (let i = M; i >= 0; i--) { const v = -0.012 - (0.11 * i) / M; rib.push([ur(v) + 0.0145, v]); }
     pb.add('polymerFde', extrudeSide(shape(rib, 0.0), 0.0018, { bevel: 0.0005, bevelSegs: 2, curveSegs: 1 }, side * 0.0114), 50);
   }
   // Floorplate: flared, tilted with the curve at the base.
@@ -131,7 +134,6 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     // Ejection port recess (right side), CH channel at the rear top, front-bottom relief
     const cutters = [
       box(0.02, 0.0172, 0.058, 0.0165, 0.0026, -0.081),
-      box(0.03, 0.01, 0.012, 0, -0.015, -0.180), // relief under the front for the pivot lug
     ];
     up = csgSub(up, ...cutters);
     pb.add('anodized', up, 35);
@@ -142,11 +144,11 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     // Forward assist housing + plunger (right, angled back/out)
     const faO = new THREE.Vector3(0.006, 0.0045, -0.040);
     const faD = new THREE.Vector3(0.42, 0.06, 1).normalize();
-    pb.add('anodized', latheAxis([[0, 0], [0.0076, 0], [0.0076, 0.030], [0.0068, 0.031], [0, 0.031]], faO, faD, 20), 40);
+    pb.add('anodized', latheAxis([[0, 0], [0.0078, 0], [0.0078, 0.029], [0.0070, 0.031], [0, 0.031]], faO, faD, 24), 40);
+    // teardrop housing boss blending the FA into the receiver side
+    pb.add('anodized', extrudeSide(shape([[0.004, -0.004], [0.046, -0.004], [0.060, 0.004], [0.046, 0.0125], [0.004, 0.0125]], [0.002, 0.004, 0.006, 0.004, 0.002]), 0.0055, { bevel: 0.0018, bevelSegs: 3 }, 0.0122), 40);
     const btnO = faO.clone().addScaledVector(faD, 0.031);
-    const btnProf: P2[] = [[0, 0], [0.0062, 0]];
-    for (let i = 0; i < 5; i++) btnProf.push([0.0062, 0.0015 + i * 0.0018], [0.0056, 0.0022 + i * 0.0018]);
-    btnProf.push([0.0062, 0.0105], [0.0058, 0.0115], [0, 0.0115]);
+    const btnProf: P2[] = [[0, -0.004], [0.0058, -0.004], [0.0058, 0.0035], [0.0052, 0.0048], [0.0035, 0.0056], [0, 0.0058]];
     pb.add('steelDark', latheAxis(btnProf, btnO, faD, 20), 40);
     // Receiver pins (upper side of pivot / takedown lugs)
   }
@@ -219,20 +221,23 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     root.add(pl2);
   }
 
-  // ---------------------------------------------------------------- Pistol grip (polymer)
+  // ---------------------------------------------------------------- Pistol grip (polymer), MOE-style, raked 20deg
   {
-    const g: P2[] = [
-      [0.041, -0.0455], [0.037, -0.060], [0.033, -0.076], [0.028, -0.094], [0.021, -0.113], [0.015, -0.129],
-      [0.011, -0.137], [-0.022, -0.1255], [-0.022, -0.115], [-0.015, -0.094], [-0.008, -0.074], [-0.004, -0.060],
-      [-0.009, -0.049], [-0.020, -0.042], [-0.017, -0.036], [0.004, -0.0375], [0.020, -0.045],
-    ];
-    const r = [0.002, 0.006, 0.01, 0.01, 0.01, 0.006, 0.004, 0.005, 0.006, 0.012, 0.01, 0.006, 0.006, 0.004, 0.003, 0.004, 0.002];
-    pb.add('polymer', extrudeSide(shape(g, r), 0.0285, { bevel: 0.0058, bevelSegs: 4, curveSegs: 6 }), 55);
+    const TH = GRIP_RAKE, u0 = 0.017, v0 = -0.043;
+    const tf = ([b, a]: P2): P2 => [u0 + b * Math.cos(TH) + a * Math.sin(TH), v0 + a * Math.cos(TH) - b * Math.sin(TH)];
+    const g: P2[] = ([
+      [0.021, 0.006], [0.0225, -0.010], [0.0195, -0.021], [0.0235, -0.044], [0.0225, -0.074], [0.0195, -0.097], [0.0155, -0.104],
+      [-0.0235, -0.104], [-0.0275, -0.097], [-0.0295, -0.070], [-0.0265, -0.040], [-0.0225, -0.019], [-0.0245, -0.007],
+      [-0.0365, 0.0035], [-0.0385, 0.0105], [-0.028, 0.0135], [0.000, 0.009],
+    ] as P2[]).map(tf);
+    const r = [0.002, 0.004, 0.006, 0.02, 0.02, 0.008, 0.004, 0.004, 0.008, 0.02, 0.02, 0.006, 0.006, 0.004, 0.003, 0.004, 0.002];
+    pb.add('polymer', extrudeSide(shape(g, r), 0.0305, { bevel: 0.0062, bevelSegs: 4, curveSegs: 6 }), 55);
     // stippled panels (slightly raised) on both sides
-    const panel = shape([[0.030, -0.066], [0.020, -0.100], [0.012, -0.121], [-0.012, -0.113], [-0.004, -0.086], [0.002, -0.064]], [0.004, 0.006, 0.004, 0.004, 0.006, 0.004]);
-    for (const side of [-1, 1]) pb.add('rubber', extrudeSide(panel, 0.0018, { bevel: 0.0006, bevelSegs: 2 }, side * 0.0128), 50);
-    // grip screw
-    pb.add('steelDark', cylinderBetween(new THREE.Vector3(0.0, -0.132, 0.004), new THREE.Vector3(0, -0.1345, 0.0052), 0.004, 0.004, 12), 40);
+    const panel = shape(([[0.017, -0.030], [0.0185, -0.060], [0.0155, -0.090], [-0.022, -0.090], [-0.024, -0.060], [-0.019, -0.030]] as P2[]).map(tf), [0.004, 0.01, 0.004, 0.004, 0.01, 0.004]);
+    for (const side of [-1, 1]) pb.add('rubber', extrudeSide(panel, 0.0016, { bevel: 0.0005, bevelSegs: 2 }, side * 0.0146), 50);
+    // storage cap at the bottom
+    const cap = shape(([[0.0135, -0.101], [0.0135, -0.1085], [-0.0215, -0.1085], [-0.0215, -0.101]] as P2[]).map(tf), 0.002);
+    pb.add('polymer', extrudeSide(cap, 0.0255, { bevel: 0.002, bevelSegs: 2 }), 50);
   }
 
   // ---------------------------------------------------------------- Trigger (animated)
@@ -295,41 +300,45 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     pb.add('steelDark', csgSub(qd, cylinderBetween(new THREE.Vector3(-0.012, -0.010, 0.0175), new THREE.Vector3(-0.030, -0.010, 0.0175), 0.0036, 0.0036, 16)), 40);
   }
 
-  // ---------------------------------------------------------------- Stock (FDE polymer)
+  // ---------------------------------------------------------------- Stock (FDE polymer), CTR-style
   {
-    const S = 0.088; // stock front z
-    const pts: P2[] = [
-      [0, 0.0195], [-0.100, 0.0205], [-0.150, 0.026], [-0.172, 0.0335], [-0.180, 0.0345], [-0.186, -0.096], [-0.181, -0.1085],
-      [-0.170, -0.1075], [-0.100, -0.050], [-0.062, -0.0255], [-0.004, -0.0235], [0, -0.019],
-    ];
-    const r = [0.004, 0.02, 0.02, 0.008, 0.003, 0.004, 0.004, 0.008, 0.03, 0.01, 0.003, 0.003];
-    const sh = shape(pts.map(([u, v]) => [u - S, v] as P2), r);
-    sh.holes.push(path([[-0.158 - S, -0.080], [-0.150 - S, -0.074], [-0.147 - S, -0.078], [-0.155 - S, -0.084]].reverse() as P2[], 0.002));
-    let stock = extrudeSide(sh, 0.0365, { bevel: 0.0062, bevelSegs: 4, curveSegs: 6 });
-    // Taper the front toward the tube housing
-    const pos = stock.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const z = pos.getZ(i);
-      const t = THREE.MathUtils.clamp((z - S) / 0.12, 0, 1);
-      pos.setX(i, pos.getX(i) * (0.92 + 0.08 * t));
-    }
-    pos.needsUpdate = true;
-    stock.computeVertexNormals();
+    const S = 0.080; // stock front z
+    const P = (pts: P2[]) => pts.map(([u, v]) => [-(u + S), v] as P2); // u = distance behind the stock front
+    const W = 0.0355;
+    // main body: tube housing + triangular butt section
+    const body = shape(P([
+      [0, 0.0165], [0.006, 0.0205], [0.080, 0.0215], [0.150, 0.0265], [0.172, 0.0335], [0.181, 0.0345],
+      [0.184, -0.093], [0.180, -0.1035], [0.170, -0.1035], [0.098, -0.047], [0.064, -0.0245], [0.006, -0.0235], [0, -0.019],
+    ]), [0.004, 0.006, 0.04, 0.03, 0.01, 0.003, 0.004, 0.004, 0.006, 0.02, 0.01, 0.004, 0.003]);
+    // sling slot through the rear toe
+    body.holes.push(path(P([[0.150, -0.0835], [0.1665, -0.0835], [0.1665, -0.0725], [0.150, -0.0725]]), 0.003));
+    let stock = extrudeSide(body, W, { bevel: 0.0055, bevelSegs: 4, curveSegs: 6 });
+    // shallow recessed side panels (both sides)
+    const pocket = shape(P([[0.088, 0.0085], [0.162, 0.0155], [0.166, 0.009], [0.166, -0.058], [0.160, -0.063], [0.104, -0.030], [0.090, -0.004]]), [0.004, 0.006, 0.004, 0.006, 0.004, 0.006, 0.006]);
+    const cutL = extrudeSide(pocket, 0.006, {}, -W / 2 - 0.0015);
+    const cutR = extrudeSide(pocket, 0.006, {}, W / 2 + 0.0015);
+    stock = csgSub(stock, cutL, cutR);
     pb.add('polymerFde', stock, 55);
+    // cheek riser strip on top (slightly raised), follows the comb line
+    pb.add('polymerFde', extrudeSide(shape(P([[0.060, 0.0195], [0.150, 0.0245], [0.166, 0.0305], [0.155, 0.0335], [0.060, 0.0245]]), [0.002, 0.01, 0.003, 0.006, 0.003]), 0.020, { bevel: 0.004, bevelSegs: 3 }), 55);
     // Butt pad (rubber) with grooves
-    const bp = shape([[-0.184 - S, 0.034], [-0.194 - S, 0.034], [-0.199 - S, -0.100], [-0.188 - S, -0.108]], [0.004, 0.006, 0.006, 0.004]);
-    let pad = extrudeSide(bp, 0.0395, { bevel: 0.005, bevelSegs: 3 });
+    const bp = shape(P([[0.180, 0.0355], [0.192, 0.0355], [0.196, -0.098], [0.186, -0.1075]]), [0.004, 0.006, 0.006, 0.004]);
+    let pad = extrudeSide(bp, W + 0.003, { bevel: 0.0048, bevelSegs: 3 });
     const grooves: THREE.BufferGeometry[] = [];
-    for (let i = 0; i < 10; i++) { const v = 0.022 - i * 0.0125; grooves.push(box(0.05, 0.0018, 0.004, 0, v, S + 0.194 + (0.034 - v) * 0.0373 + 0.0045)); }
+    for (let i = 0; i < 11; i++) { const v = 0.024 - i * 0.0115; const uu = 0.192 + (0.0355 - v) * 0.03; grooves.push(box(0.05, 0.0016, 0.004, 0, v, S + uu + 0.0028)); }
     pad = csgSub(pad, ...grooves);
     pb.add('rubber', pad, 50);
-    // Adjustment lever under the front
-    pb.add('polymer', extrudeSide(shape([[-0.012 - S, -0.022], [-0.055 - S, -0.024], [-0.058 - S, -0.030], [-0.020 - S, -0.030]], [0.001, 0.002, 0.002, 0.002]), 0.012, { bevel: 0.0015, bevelSegs: 2 }), 50);
+    // Adjustment latch lever under the tube housing + QD socket on the side
+    pb.add('polymer', extrudeSide(shape(P([[0.012, -0.0225], [0.058, -0.0235], [0.061, -0.0305], [0.054, -0.0325], [0.018, -0.0295]]), [0.001, 0.002, 0.003, 0.003, 0.002]), 0.0125, { bevel: 0.0016, bevelSegs: 2 }), 50);
+    for (const side of [-1, 1]) {
+      const qd = latheAxis([[0, 0], [0.0068, 0], [0.0068, 0.0025], [0.0058, 0.0032], [0, 0.0032]], new THREE.Vector3(side * (W / 2 - 0.0012), -0.004, S + 0.030), new THREE.Vector3(side, 0, 0), 20);
+      pb.add('steelDark', csgSub(qd, cylinderBetween(new THREE.Vector3(side * (W / 2 - 0.001), -0.004, S + 0.030), new THREE.Vector3(side * (W / 2 + 0.01), -0.004, S + 0.030), 0.0036, 0.0036, 16)), 40);
+    }
   }
 
   // ---------------------------------------------------------------- Handguard (M-LOK, anodized)
   {
-    const hgY0 = -0.0305, hgX = 0.0232;
+    const hgY0 = -0.0305, hgX = 0.0212;
     const xs: P2[] = [[-0.0125, hgY0], [0.0125, hgY0], [hgX, hgY0 + 0.0095], [hgX, 0.0105], [0.0118, UPPER_TOP], [-0.0118, UPPER_TOP], [-hgX, 0.0105], [-hgX, hgY0 + 0.0095]];
     const sh = shape(xs, [0.003, 0.003, 0.003, 0.003, 0.002, 0.002, 0.003, 0.003]);
     sh.holes.push(path([[-0.0102, hgY0 + 0.0028], [0.0102, hgY0 + 0.0028], [hgX - 0.0028, hgY0 + 0.012], [hgX - 0.0028, 0.0092], [0.0098, UPPER_TOP - 0.0028], [-0.0098, UPPER_TOP - 0.0028], [-hgX + 0.0028, 0.0092], [-hgX + 0.0028, hgY0 + 0.012]], 0.002));
@@ -427,56 +436,61 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     pb.add('anodized', g, 40);
   }
 
-  // ---------------------------------------------------------------- Holographic sight
+  // ---------------------------------------------------------------- Holographic sight (EXPS-style)
   const optic = new THREE.Group();
   optic.name = 'optic';
-  optic.position.set(0, RAIL_TOP, -0.040);
+  optic.position.set(0, RAIL_TOP, -0.036);
   const ob = new PartBuilder(mats);
   let lensFrame: THREE.Object3D;
   let reticle: THREE.ShaderMaterial;
   {
-    const WIN_CY = 0.0292; // window center above rail top
+    const HW = 0.0212, HB = 0.0115, HT = 0.0515;
+    const WW = 0.0316, WH = 0.0250;
     // mount: clamp block around the rail
-    const mount = shape([[-0.0148, -0.0062], [-0.0112, -0.0062], [-0.0112, -0.0035], [-0.0085, 0.0003], [0.0085, 0.0003], [0.0112, -0.0035], [0.0112, -0.0062], [0.0148, -0.0062], [0.0158, 0.0085], [-0.0158, 0.0085]],
+    const mount = shape([[-0.0152, -0.0062], [-0.0112, -0.0062], [-0.0112, -0.0035], [-0.0085, 0.0003], [0.0085, 0.0003], [0.0112, -0.0035], [0.0112, -0.0062], [0.0152, -0.0062], [0.0162, 0.0082], [-0.0162, 0.0082]],
       [0.001, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.001, 0.002, 0.002]);
-    ob.add('anodized', extrudeFront(mount, 0.072, { bevel: 0.0012, bevelSegs: 2 }, -0.008), 35);
+    ob.add('anodized', extrudeFront(mount, 0.078, { bevel: 0.0012, bevelSegs: 2 }, -0.010), 35);
     // cross bolt / QD lever on the left
-    ob.add('steelDark', cylinderBetween(new THREE.Vector3(-0.0158, -0.001, -0.052), new THREE.Vector3(-0.0178, -0.001, -0.052), 0.0038, 0.0036, 16), 40);
-    const lever = extrudeSide(shape([[0.020, -0.0035], [0.056, -0.0028], [0.058, 0.0012], [0.020, 0.0035]], [0.002, 0.002, 0.002, 0.002]), 0.0028, { bevel: 0.0008, bevelSegs: 2 }, -0.0184);
+    ob.add('steelDark', cylinderBetween(new THREE.Vector3(-0.0162, -0.0005, -0.060), new THREE.Vector3(-0.0184, -0.0005, -0.060), 0.0040, 0.0038, 18), 40);
+    const lever = extrudeSide(shape([[0.020, -0.0038], [0.062, -0.0030], [0.064, 0.0014], [0.020, 0.0038]], [0.002, 0.002, 0.002, 0.002]), 0.0030, { bevel: 0.0009, bevelSegs: 2 }, -0.0192);
     ob.add('steelDark', lever, 40);
-    ob.add('steelDark', cylinderBetween(new THREE.Vector3(0.0158, -0.001, -0.052), new THREE.Vector3(0.0172, -0.001, -0.052), 0.0042, 0.0042, 6), 40);
-    // lower body (electronics)
-    ob.add('anodized', extrudeFront(shape([[-0.0172, 0.0080], [0.0172, 0.0080], [0.0172, 0.0172], [-0.0172, 0.0172]], [0.002, 0.002, 0.001, 0.001]), 0.094, { bevel: 0.0014, bevelSegs: 2 }, -0.002), 35);
-    // rear control housing
-    // rear deck buttons: two on the top-rear, two on the left side
-    for (const x of [-0.0072, 0.0072]) ob.add('rubber', xform(roundBox(0.0085, 0.0032, 0.0085, 0.0014), x, 0.0180, -0.010), 50);
-    for (const z of [-0.008, -0.018]) ob.add('rubber', xform(roundBox(0.0030, 0.0058, 0.0070, 0.0012), -0.0178, 0.0128, z), 50);
+    ob.add('steelDark', cylinderBetween(new THREE.Vector3(0.0162, -0.0005, -0.060), new THREE.Vector3(0.0178, -0.0005, -0.060), 0.0045, 0.0045, 6), 40);
+    // lower body (electronics / battery)
+    ob.add('anodized', extrudeFront(shape([[-0.0188, 0.0075], [0.0188, 0.0075], [0.0188, 0.0172], [-0.0188, 0.0172]], [0.0025, 0.0025, 0.001, 0.001]), 0.102, { bevel: 0.0016, bevelSegs: 3 }, -0.001), 35);
+    // rear deck: sloped cover with two buttons on top, two on the left side
+    const deck = shape([[-0.0180, 0.0165], [0.0180, 0.0165], [0.0175, 0.0200], [-0.0175, 0.0200]], 0.001);
+    ob.add('anodized', extrudeFront(deck, 0.020, { bevel: 0.0012, bevelSegs: 2 }, -0.003), 35);
+    for (const x of [-0.0074, 0.0074]) ob.add('rubber', xform(roundBox(0.0092, 0.0036, 0.0092, 0.0016), x, 0.0212, -0.012), 50);
+    for (const z of [-0.009, -0.020]) ob.add('rubber', xform(roundBox(0.0032, 0.0060, 0.0075, 0.0013), -0.0192, 0.0122, z), 50);
     // hood with window
-    const hood = shape([[-0.0188, 0.0120], [0.0188, 0.0120], [0.0188, 0.0400], [0.0120, 0.0472], [-0.0120, 0.0472], [-0.0188, 0.0400]], [0.001, 0.001, 0.006, 0.006, 0.006, 0.006]);
-    hood.holes.push(rrectPath(0, WIN_CY, 0.0296, 0.0228, 0.0035));
-    ob.add('anodized', extrudeFront(hood, 0.066, { bevel: 0.0016, bevelSegs: 3 }, -0.026), 35);
+    const hood = shape([[-HW, HB], [HW, HB], [HW, HT - 0.010], [HW - 0.0075, HT], [-HW + 0.0075, HT], [-HW, HT - 0.010]], [0.001, 0.001, 0.007, 0.007, 0.007, 0.007]);
+    hood.holes.push(rrectPath(0, WIN_CY, WW, WH, 0.004));
+    ob.add('anodized', extrudeFront(hood, 0.074, { bevel: 0.0018, bevelSegs: 3 }, -0.024), 35);
+    // hood side screws
+    for (const side of [-1, 1]) for (const z of [-0.036, -0.086]) ob.add('steelDark', cylinderBetween(new THREE.Vector3(side * HW, 0.040, z), new THREE.Vector3(side * (HW + 0.0009), 0.040, z), 0.0017, 0.0016, 10), 40);
     // windage/elevation turrets (right side)
-    ob.add('anodized', cylinderBetween(new THREE.Vector3(0.0188, 0.030, -0.070), new THREE.Vector3(0.0215, 0.030, -0.070), 0.0045, 0.0042, 16), 40);
-    ob.add('anodized', cylinderBetween(new THREE.Vector3(0.0188, 0.017, -0.050), new THREE.Vector3(0.0212, 0.017, -0.050), 0.0038, 0.0036, 16), 40);
+    ob.add('anodized', cylinderBetween(new THREE.Vector3(HW, 0.030, -0.074), new THREE.Vector3(HW + 0.0032, 0.030, -0.074), 0.0050, 0.0046, 18), 40);
+    ob.add('anodized', cylinderBetween(new THREE.Vector3(0.0188, 0.0125, -0.050), new THREE.Vector3(0.0215, 0.0125, -0.050), 0.0040, 0.0038, 16), 40);
     // battery cap (transverse, front-bottom), knurled cap on the right
-    ob.add('anodized', cylinderBetween(new THREE.Vector3(-0.0178, 0.0098, -0.083), new THREE.Vector3(0.0178, 0.0098, -0.083), 0.0078, 0.0078, 24), 40);
-    const knurl: P2[] = [[0, 0], [0.0088, 0]];
-    for (let i = 0; i < 4; i++) knurl.push([0.0088, 0.0012 + i * 0.0014], [0.0082, 0.0018 + i * 0.0014]);
-    knurl.push([0.0086, 0.0066], [0.0078, 0.0074], [0, 0.0074]);
-    ob.add('steelDark', latheAxis(knurl, new THREE.Vector3(0.0175, 0.0098, -0.083), new THREE.Vector3(1, 0, 0), 24), 40);
+    ob.add('anodized', cylinderBetween(new THREE.Vector3(-0.0192, 0.0102, -0.090), new THREE.Vector3(0.0192, 0.0102, -0.090), 0.0080, 0.0080, 24), 40);
+    const knurl: P2[] = [[0, 0], [0.0090, 0]];
+    for (let i = 0; i < 4; i++) knurl.push([0.0090, 0.0012 + i * 0.0014], [0.0084, 0.0018 + i * 0.0014]);
+    knurl.push([0.0088, 0.0066], [0.0080, 0.0074], [0, 0.0074]);
+    ob.add('steelDark', latheAxis(knurl, new THREE.Vector3(0.0189, 0.0102, -0.090), new THREE.Vector3(1, 0, 0), 24), 40);
     optic.add(ob.build('optic'));
     // Lenses
     lensFrame = new THREE.Object3D();
     lensFrame.name = 'lens';
-    lensFrame.position.set(0, WIN_CY, -0.034);
+    lensFrame.position.set(0, WIN_CY, -0.032);
     reticle = createReticleMaterial();
-    const lens = new THREE.Mesh(new THREE.PlaneGeometry(0.0296, 0.0228), reticle);
+    reticle.uniforms.uWindow.value.set(WW / 2, WH / 2, 0.004, 0);
+    const lens = new THREE.Mesh(new THREE.PlaneGeometry(WW, WH), reticle);
     lens.renderOrder = 10;
     lensFrame.add(lens);
     optic.add(lensFrame);
-    const fg = new THREE.MeshStandardMaterial({ color: 0x6fa8d8, metalness: 1, roughness: 0.04, transparent: true, opacity: 0.18, depthWrite: false });
-    const front = new THREE.Mesh(new THREE.PlaneGeometry(0.0296, 0.0228), fg);
-    front.position.set(0, WIN_CY, -0.088);
+    const fg = new THREE.MeshStandardMaterial({ color: 0x6fa8d8, metalness: 1, roughness: 0.04, transparent: true, opacity: 0.16, depthWrite: false });
+    const front = new THREE.Mesh(new THREE.PlaneGeometry(WW, WH), fg);
+    front.position.set(0, WIN_CY, -0.094);
     front.renderOrder = 9;
     optic.add(front);
   }
@@ -520,7 +534,7 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
   magNew.visible = false;
   root.add(magNew);
   // grip point on the mag for the off hand: middle of the body, slightly below the magwell
-  const magHandle = new THREE.Matrix4().makeTranslation(0, -0.085, -0.036);
+  const magHandle = new THREE.Matrix4().makeTranslation(0, -0.095, -0.036);
 
   // ---------------------------------------------------------------- Static parts mesh
   const statics = pb.build('m4-static');
@@ -537,35 +551,36 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
   // ---------------------------------------------------------------- Hand grips
   // Pistol grip SDF (elliptic capsule along the grip axis)
   const gripSdf: SDF = sdUnion(
-    sdEllipticCapsule(new THREE.Vector3(0, -0.050, -0.019), new THREE.Vector3(0, -0.126, 0.003), new THREE.Vector3(1, 0, 0), 0.0143, 0.0195),
+    sdEllipticCapsule(new THREE.Vector3(0, -0.050, -0.0146), new THREE.Vector3(0, -0.130, 0.0146), new THREE.Vector3(1, 0, 0), 0.0152, 0.0235),
     sdRoundBox(new THREE.Vector3(0, -0.056, -0.071), new THREE.Vector3(0.006, 0.011, 0.034), 0.004), // trigger guard (index/middle rest)
   );
   const hgSdf: SDF = sdUnion(
-    sdRoundBox(new THREE.Vector3(0, -0.0065, -0.325), new THREE.Vector3(0.0232, 0.024, 0.145), 0.007),
+    sdRoundBox(new THREE.Vector3(0, -0.0065, -0.325), new THREE.Vector3(0.0212, 0.024, 0.145), 0.007),
     sdRoundBox(new THREE.Vector3(0, 0.022, -0.325), new THREE.Vector3(0.0106, 0.005, 0.145), 0.001),
   );
   const magSdf: SDF = (p) => 0; void magSdf;
 
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   const rightGrip = {
-    wrist: [0.0065, -0.063, 0.036, 0.0, 0.0, 0.0] as [number, number, number, number, number, number],
+    wrist: gripWrist(V(0.0165, -0.088, 0.006), V(-0.25, -0.33, -0.91), V(0.95, 0.0, -0.26)),
     sdf: gripSdf,
     index: [0.55, 0.9, 0.35] as [number, number, number],
     thumb: null,
     squeeze: 0.25,
   };
   const leftGrip = {
-    wrist: [-0.036, -0.047, -0.335, 0, 0, 0] as [number, number, number, number, number, number],
+    wrist: gripWrist(V(-0.030, -0.042, -0.315), V(0.93, 0.2, -0.3), V(-0.42, -0.9, 0.0)),
     sdf: hgSdf,
     index: null,
     thumb: null,
     squeeze: 0.25,
   };
   // Off hand gripping the magazine body (reload) - pose authored in mag space, converted at runtime
-  const magBody = sdOrientedBox(new THREE.Matrix4().makeTranslation(0, -0.080, -0.040), new THREE.Vector3(0.0114, 0.075, 0.032), 0.004);
+  const magBody = sdOrientedBox(new THREE.Matrix4().makeTranslation(0, -0.090, -0.040), new THREE.Vector3(0.0114, 0.085, 0.032), 0.004);
 
   const model: WeaponModel = {
     id: 'm4', kind: 'rifle', root, muzzle, eject,
-    sightPoint: new THREE.Vector3(0, RAIL_TOP + 0.0292, -0.074),
+    sightPoint: new THREE.Vector3(0, RAIL_TOP + WIN_CY, -0.068),
     eyeRelief: 0.105,
     lens: lensFrame, reticle,
     bolt, boltTravel: 0.058,
@@ -574,7 +589,8 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     pivot: new THREE.Vector3(0, -0.06, -0.02),
     rightGrip, leftGrip,
     leftPoses: {
-      mag: { wrist: [0, 0, 0, 0, 0, 0], sdf: magBody, index: null, thumb: null, squeeze: 0.2 },
+      // off hand on the magazine, in magazine space (mag front toward -Z, body down -Y)
+      mag: { wrist: gripWrist(V(-0.0255, -0.075, -0.030), V(0.12, 0.25, -1), V(-1, 0.05, 0.1)), sdf: magBody, index: null, thumb: null, squeeze: 0.2 },
     },
     dispose() {
       root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });

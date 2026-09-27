@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect, ToneMappingEffect, ToneMappingMode, SMAAEffect } from 'postprocessing';
 import { EventBus, type Surface } from '../../core/events';
 import type { GameContext, Quality, RaycastHit } from '../../core/types';
-import { createFX, type FXExtras } from '../../fx';
+import { createFX, fxOptions, type FXExtras } from '../../fx';
 
 /**
  * FX test range: a self-contained golden-hour backdrop (concrete wall, plaster wall, painted steel
@@ -146,6 +146,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   } as unknown as GameContext;
   window.__shameless.ctx = ctx;
 
+  fxOptions.flipRes = Number(new URLSearchParams(location.search).get('flip') ?? 0);
   const fx = (await createFX(ctx)) as unknown as FXExtras & { update(dt: number): void };
 
   // ------------------------------------------------------------ post (bloom + ACES, like the game's post stack)
@@ -181,6 +182,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     street: [0.5, 1.7, 6, 0.5, 1.0, -8],
     sun: [-4, 1.6, 3, 8, 1.2, -1.5],
     explosion: [0.5, 1.8, 9, 0.8, 1.6, -2],
+    casings: [1.0, 0.7, 6.2, 2.4, 0.0, 4.4],
   };
   const setView = (name: string) => {
     const v = views[name] ?? views.overview;
@@ -276,10 +278,12 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
       events.emit('enemy:hit', { enemyId: 1, point: p, normal: d.clone().negate(), dir: d, damage: 30, headshot, killed });
     },
     tracers(n = 6) {
+      camBasis();
       for (let i = 0; i < n; i++) {
         const enemy = i % 2 === 1;
-        const from = enemy ? new THREE.Vector3(-8 + rnd() * 4, 1.4 + rnd(), -30) : camera.position.clone().add(new THREE.Vector3(0.15, -0.1, -0.6));
-        const to = enemy ? new THREE.Vector3(2 + rnd() * 3, 0.5 + rnd() * 2, 8) : new THREE.Vector3(-2 + rnd() * 4, 0.5 + rnd() * 2.5, -5);
+        // player tracers leave the muzzle toward the wall; enemy tracers cross the view in front of it
+        const from = enemy ? new THREE.Vector3(-14, 1.2 + rnd(), -2.5 - rnd() * 2) : camera.position.clone().addScaledVector(right, 0.12).addScaledVector(upv, -0.1).addScaledVector(fwd, 0.7);
+        const to = enemy ? new THREE.Vector3(14, 0.8 + rnd() * 1.5, 2 + rnd() * 3) : new THREE.Vector3(-2 + rnd() * 4, 0.5 + rnd() * 2.5, -5);
         fx.tracer(from, to, enemy);
       }
     },
@@ -294,15 +298,15 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     },
     gust() { fx.gust(); },
     /** fullscreen debug view of a generated texture: 'flip' (rgb normals), 'flipa' (alpha), 'flipb' (thickness), 'decal', 'decaln' */
-    showTex(which: string | null) {
+    showTex(which: string | null, zoom = 1, ox = 0, oy = 0) {
       scene.getObjectByName('dbgTex')?.removeFromParent();
       if (!which) return;
       const tex = which.startsWith('flip') ? fx.textures.flipbook : which === 'decaln' ? fx.textures.decalNormal : fx.textures.decalAlbedo;
       const mode = which === 'flipa' ? 1 : which === 'flipb' ? 2 : which === 'decal' ? 3 : 0;
       const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-        uniforms: { t: { value: tex }, mode: { value: mode } }, depthTest: false, depthWrite: false,
+        uniforms: { t: { value: tex }, mode: { value: mode }, zoom: { value: zoom }, off: { value: new THREE.Vector2(ox, oy) } }, depthTest: false, depthWrite: false,
         vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy * vec2(0.5625, 1.0), 0.0, 1.0); }',
-        fragmentShader: 'uniform sampler2D t; uniform int mode; varying vec2 vUv; void main(){ vec4 c = texture2D(t, vUv); vec3 o = mode==1 ? vec3(c.a) : mode==2 ? vec3(c.b) : mode==3 ? mix(vec3(0.5), c.rgb, c.a) : c.rgb; gl_FragColor = vec4(o, 1.0); }',
+        fragmentShader: 'uniform sampler2D t; uniform int mode; uniform float zoom; uniform vec2 off; varying vec2 vUv; void main(){ vec4 c = texture2D(t, vUv / zoom + off); vec3 o = mode==1 ? vec3(c.a) : mode==2 ? vec3(c.b) : mode==3 ? mix(vec3(0.5), c.rgb, c.a) : c.rgb; gl_FragColor = vec4(o, 1.0); }',
       }));
       m.name = 'dbgTex'; m.frustumCulled = false; m.renderOrder = 999;
       scene.add(m);

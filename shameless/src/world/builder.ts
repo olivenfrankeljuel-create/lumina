@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { GameContext, MaterialName } from '../core/types';
 import type { Surface } from '../core/events';
 
@@ -10,7 +9,7 @@ import type { Surface } from '../core/events';
  */
 export type MatKey = string;
 
-const WEAR = [0.12, 0.35, 0.6, 0.85];
+export const WEAR = [0.12, 0.35, 0.6, 0.85];
 export function mk(name: MaterialName, variant = 0): MatKey {
   return `${name}|${variant}`;
 }
@@ -28,56 +27,54 @@ export interface BoxOpts {
   uv?: 'world' | 'keep';
 }
 
-interface ColBox {
+export interface ColBox {
   c: THREE.Vector3;
   s: THREE.Vector3;
   q: THREE.Quaternion;
   surface: Surface;
 }
 
+/** Raw geometry piece (world space) waiting to be merged. */
+interface Piece { p: Float32Array; n: Float32Array; uv: Float32Array; c: Float32Array | null; i: Uint32Array; cx: number; cz: number }
+
 const tmpM = new THREE.Matrix4();
+const tmpN = new THREE.Matrix3();
 const tmpQ = new THREE.Quaternion();
 const tmpE = new THREE.Euler();
 const tmpV = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 
 export const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+const BOX_P = UNIT_BOX.attributes.position.array as Float32Array;
+const BOX_N = UNIT_BOX.attributes.normal.array as Float32Array;
+const BOX_I = new Uint32Array(UNIT_BOX.index!.array as ArrayLike<number>);
+
+function worldUVArr(p: Float32Array, n: Float32Array, out: Float32Array) {
+  const cnt = p.length / 3;
+  for (let i = 0; i < cnt; i++) {
+    const x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2];
+    const nx = n[i * 3], ny = n[i * 3 + 1], nz = n[i * 3 + 2];
+    const ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+    let u: number, v: number;
+    if (ay >= ax && ay >= az) { u = x; v = z; }
+    else if (ax >= az) { u = nx > 0 ? -z : z; v = y; }
+    else { u = nz > 0 ? x : -x; v = y; }
+    out[i * 2] = u;
+    out[i * 2 + 1] = v;
+  }
+}
 
 /** Project world-space UVs (meters) by dominant normal axis so textures stay consistent across merged boxes. */
 export function worldUV(geo: THREE.BufferGeometry): void {
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  const nor = geo.attributes.normal as THREE.BufferAttribute;
-  const uv = new Float32Array(pos.count * 2);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const nx = Math.abs(nor.getX(i)), ny = Math.abs(nor.getY(i)), nz = Math.abs(nor.getZ(i));
-    let u: number, v: number;
-    if (ny >= nx && ny >= nz) { u = x; v = z; }
-    else if (nx >= nz) { u = nor.getX(i) > 0 ? -z : z; v = y; }
-    else { u = nor.getZ(i) > 0 ? x : -x; v = y; }
-    uv[i * 2] = u;
-    uv[i * 2 + 1] = v;
-  }
+  const p = geo.attributes.position.array as Float32Array;
+  const n = geo.attributes.normal.array as Float32Array;
+  const uv = new Float32Array((p.length / 3) * 2);
+  worldUVArr(p, n, uv);
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
-function normalize(geo: THREE.BufferGeometry): THREE.BufferGeometry {
-  for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'color') geo.deleteAttribute(k);
-  if (!geo.attributes.normal) geo.computeVertexNormals();
-  if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
-  if (!geo.index) {
-    const n = geo.attributes.position.count;
-    const idx = new Uint32Array(n);
-    for (let i = 0; i < n; i++) idx[i] = i;
-    geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  }
-  geo.clearGroups();
-  geo.morphAttributes = {};
-  return geo;
-}
-
 export class Builder {
-  readonly batches = new Map<MatKey, THREE.BufferGeometry[]>();
+  readonly batches = new Map<MatKey, Piece[]>();
   readonly customMats = new Map<string, THREE.Material>();
   readonly colBoxes: ColBox[] = [];
   readonly colGeos: { geo: THREE.BufferGeometry; surface: Surface }[] = [];
@@ -90,19 +87,36 @@ export class Builder {
   constructor(readonly ctx: GameContext) {}
 
   surfaceOf(key: MatKey): Surface {
-    if (key.startsWith('custom:')) return 'concrete';
+    if (key.startsWith('custom:')) return key === 'custom:cloth' ? 'fabric' : key === 'custom:foliage' ? 'wood' : 'concrete';
     return this.ctx.materials.surfaceOf(parseKey(key).name);
+  }
+
+  private push(key: MatKey, pc: Piece) {
+    let list = this.batches.get(key);
+    if (!list) this.batches.set(key, (list = []));
+    list.push(pc);
+    this.tris += pc.i.length / 3;
   }
 
   /** Push geometry (consumed — do not reuse after). Optional world matrix applied. */
   add(key: MatKey, geo: THREE.BufferGeometry, m?: THREE.Matrix4, uv: 'world' | 'keep' = 'world'): void {
     if (m) geo.applyMatrix4(m);
-    normalize(geo);
-    if (uv === 'world') worldUV(geo);
-    let list = this.batches.get(key);
-    if (!list) this.batches.set(key, (list = []));
-    list.push(geo);
-    this.tris += (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    const p = new Float32Array(geo.attributes.position.array as ArrayLike<number>);
+    for (let i = 0; i < p.length; i++) if (!Number.isFinite(p[i])) { console.warn('[world] NaN geometry', key); geo.dispose(); return; }
+    const n = new Float32Array(geo.attributes.normal.array as ArrayLike<number>);
+    let u: Float32Array;
+    if (uv === 'world' || !geo.attributes.uv) { u = new Float32Array((p.length / 3) * 2); worldUVArr(p, n, u); }
+    else u = new Float32Array(geo.attributes.uv.array as ArrayLike<number>);
+    const c = geo.attributes.color ? new Float32Array(geo.attributes.color.array as ArrayLike<number>) : null;
+    let idx: Uint32Array;
+    if (geo.index) idx = new Uint32Array(geo.index.array as ArrayLike<number>);
+    else { idx = new Uint32Array(p.length / 3); for (let i = 0; i < idx.length; i++) idx[i] = i; }
+    let cx = 0, cz = 0;
+    const cnt = p.length / 3;
+    for (let i = 0; i < cnt; i++) { cx += p[i * 3]; cz += p[i * 3 + 2]; }
+    geo.dispose();
+    this.push(key, { p, n, uv: u, c, i: idx, cx: cx / Math.max(1, cnt), cz: cz / Math.max(1, cnt) });
   }
 
   /** Add geometry transformed by position/rotation(Euler YXZ order)/scale. */
@@ -113,11 +127,32 @@ export class Builder {
     this.add(key, geo, tmpM, uv);
   }
 
+  /** Oriented box, written directly into a piece (fast path — most of the world is boxes). */
   box(key: MatKey, cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, o: BoxOpts = {}): void {
-    if (sx <= 0.0005 || sy <= 0.0005 || sz <= 0.0005) return;
-    const g = UNIT_BOX.clone();
-    this.addT(key, g, cx, cy, cz, o.ry ?? 0, o.rx ?? 0, o.rz ?? 0, sx, sy, sz, o.uv ?? 'world');
-    if (o.col) this.colBox(cx, cy, cz, sx, sy, sz, typeof o.col === 'string' ? o.col : this.surfaceOf(key), o.ry ?? 0, o.rx ?? 0, o.rz ?? 0);
+    if (!(sx > 0.0005 && sy > 0.0005 && sz > 0.0005)) return;
+    const ry = o.ry ?? 0, rx = o.rx ?? 0, rz = o.rz ?? 0;
+    tmpE.set(rx, ry, rz, 'YXZ');
+    tmpQ.setFromEuler(tmpE);
+    tmpM.compose(tmpV.set(cx, cy, cz), tmpQ, tmpS.set(sx, sy, sz));
+    const e = tmpM.elements;
+    tmpN.setFromMatrix4(tmpM.makeRotationFromQuaternion(tmpQ));
+    const r = tmpN.elements;
+    tmpM.compose(tmpV.set(cx, cy, cz), tmpQ, tmpS.set(sx, sy, sz));
+    const p = new Float32Array(72), n = new Float32Array(72);
+    for (let i = 0; i < 24; i++) {
+      const x = BOX_P[i * 3], y = BOX_P[i * 3 + 1], z = BOX_P[i * 3 + 2];
+      p[i * 3] = e[0] * x + e[4] * y + e[8] * z + e[12];
+      p[i * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+      p[i * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+      const a = BOX_N[i * 3], b = BOX_N[i * 3 + 1], c = BOX_N[i * 3 + 2];
+      n[i * 3] = r[0] * a + r[3] * b + r[6] * c;
+      n[i * 3 + 1] = r[1] * a + r[4] * b + r[7] * c;
+      n[i * 3 + 2] = r[2] * a + r[5] * b + r[8] * c;
+    }
+    const uv = new Float32Array(48);
+    worldUVArr(p, n, uv);
+    this.push(key, { p, n, uv, c: null, i: BOX_I, cx, cz });
+    if (o.col) this.colBox(cx, cy, cz, sx, sy, sz, typeof o.col === 'string' ? o.col : this.surfaceOf(key), ry, rx, rz);
   }
 
   /** Axis-aligned box from min/max corners. */
@@ -135,42 +170,33 @@ export class Builder {
     this.colGeos.push({ geo, surface });
   }
 
+  materialFor(key: MatKey): THREE.Material {
+    if (key.startsWith('custom:')) return this.customMats.get(key)!;
+    const { name, variant } = parseKey(key);
+    return this.ctx.materials.get(name, { seed: variant * 7919 + 13, wear: WEAR[variant % 4] });
+  }
+
   /** Merge all batches into meshes. Large batches are split into spatial chunks for frustum culling. */
   build(chunkSize = 44, chunkTriThreshold = 12000): THREE.Group {
     const group = new THREE.Group();
     group.name = 'world-static';
-    for (const [key, geos] of this.batches) {
-      if (!geos.length) continue;
-      let mat: THREE.Material;
-      if (key.startsWith('custom:')) mat = this.customMats.get(key)!;
-      else {
-        const { name, variant } = parseKey(key);
-        mat = this.ctx.materials.get(name, { seed: variant * 7919 + 13, wear: WEAR[variant % 4] });
-      }
+    for (const [key, pieces] of this.batches) {
+      if (!pieces.length) continue;
+      const mat = this.materialFor(key);
       let total = 0;
-      for (const g of geos) total += g.index!.count / 3;
-      const buckets = new Map<string, THREE.BufferGeometry[]>();
+      for (const pc of pieces) total += pc.i.length / 3;
+      const buckets = new Map<string, Piece[]>();
       if (total > chunkTriThreshold && !this.noChunk.has(key)) {
-        for (const g of geos) {
-          g.computeBoundingBox();
-          g.boundingBox!.getCenter(tmpV);
-          const id = `${Math.floor(tmpV.x / chunkSize)},${Math.floor(tmpV.z / chunkSize)}`;
+        for (const pc of pieces) {
+          const id = `${Math.floor(pc.cx / chunkSize)},${Math.floor(pc.cz / chunkSize)}`;
           let b = buckets.get(id);
           if (!b) buckets.set(id, (b = []));
-          b.push(g);
+          b.push(pc);
         }
-      } else buckets.set('all', geos);
+      } else buckets.set('all', pieces);
       for (const [cid, list] of buckets) {
-        const hasColor = list.some((g) => g.attributes.color);
-        if (hasColor) for (const g of list) if (!g.attributes.color) {
-          const c = new Float32Array(g.attributes.position.count * 3).fill(1);
-          g.setAttribute('color', new THREE.BufferAttribute(c, 3));
-        }
-        const merged = mergeGeometries(list, false);
-        if (!merged) { console.warn('[world] merge failed for', key); continue; }
-        merged.computeBoundingSphere();
-        merged.computeBoundingBox();
-        const mesh = new THREE.Mesh(merged, mat);
+        const geo = mergePieces(list);
+        const mesh = new THREE.Mesh(geo, mat);
         mesh.name = `${key}@${cid}`;
         mesh.matrixAutoUpdate = false;
         mesh.userData.surface = this.surfaceOf(key);
@@ -178,7 +204,6 @@ export class Builder {
         if (this.noShadow.has(key)) mesh.userData.noShadow = true;
         group.add(mesh);
       }
-      for (const g of geos) g.dispose();
     }
     this.batches.clear();
     return group;
@@ -188,10 +213,11 @@ export class Builder {
   buildColliders(): THREE.Group {
     const group = new THREE.Group();
     group.name = 'world-colliders';
-    const bySurface = new Map<Surface, THREE.BufferGeometry[]>();
-    // Boxes: individual meshes with real dimensions (cheap for physics to convert to cuboids).
+    const geoCache = new Map<string, THREE.BoxGeometry>();
     for (const b of this.colBoxes) {
-      const geo = new THREE.BoxGeometry(b.s.x, b.s.y, b.s.z);
+      const k = `${b.s.x.toFixed(3)},${b.s.y.toFixed(3)},${b.s.z.toFixed(3)}`;
+      let geo = geoCache.get(k);
+      if (!geo) geoCache.set(k, (geo = new THREE.BoxGeometry(b.s.x, b.s.y, b.s.z)));
       const m = new THREE.Mesh(geo);
       m.position.copy(b.c);
       m.quaternion.copy(b.q);
@@ -201,19 +227,41 @@ export class Builder {
       group.add(m);
     }
     for (const g of this.colGeos) {
-      let l = bySurface.get(g.surface);
-      if (!l) bySurface.set(g.surface, (l = []));
-      l.push(normalize(g.geo));
-    }
-    for (const [surface, list] of bySurface) {
-      const merged = mergeGeometries(list, false);
-      if (!merged) continue;
-      const m = new THREE.Mesh(merged);
-      m.userData.surface = surface;
+      const m = new THREE.Mesh(g.geo);
+      m.userData.surface = g.surface;
       m.visible = false;
       group.add(m);
     }
     group.updateMatrixWorld(true);
     return group;
   }
+}
+
+function mergePieces(list: Piece[]): THREE.BufferGeometry {
+  let nv = 0, ni = 0;
+  const hasColor = list.some((p) => p.c);
+  for (const pc of list) { nv += pc.p.length / 3; ni += pc.i.length; }
+  const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), U = new Float32Array(nv * 2);
+  const C = hasColor ? new Float32Array(nv * 3).fill(1) : null;
+  const I = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+  let vo = 0, io = 0;
+  for (const pc of list) {
+    P.set(pc.p, vo * 3);
+    N.set(pc.n, vo * 3);
+    U.set(pc.uv, vo * 2);
+    if (C && pc.c) C.set(pc.c, vo * 3);
+    const idx = pc.i;
+    for (let k = 0; k < idx.length; k++) I[io + k] = idx[k] + vo;
+    vo += pc.p.length / 3;
+    io += idx.length;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(U, 2));
+  if (C) g.setAttribute('color', new THREE.BufferAttribute(C, 3));
+  g.setIndex(new THREE.BufferAttribute(I, 1));
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
 }

@@ -6,7 +6,7 @@ import { N8AOPostPass } from 'n8ao';
 import type { GameContext, RenderPipeline } from '../core/types';
 import { createSky, DEFAULT_ATMOSPHERE, type AtmosphereParams, type SkySystem } from './atmosphere';
 import { createSunLight, patchShadowChunks } from './shadows';
-import { AtmospherePass, ViewmodelPass, GradeEffect, FinalEffect } from './post';
+import { AtmospherePass, ViewmodelPass, GradeEffect, FinalEffect, MotionBlurPass, ExposurePass } from './post';
 
 /**
  * SHAMELESS render pipeline.
@@ -29,6 +29,8 @@ export interface RenderTuning {
   };
   ao: { radius: number; intensity: number; falloff: number };
   envIntensity: number;
+  /** Eye adaptation: ref = log2 luminance considered "normal" (outdoor golden hour), strength 0..1. */
+  adapt: { ref: number; strength: number; min: number; max: number };
 }
 
 export const DEFAULT_TUNING: RenderTuning = {
@@ -43,6 +45,7 @@ export const DEFAULT_TUNING: RenderTuning = {
   },
   ao: { radius: 1.6, intensity: 2.2, falloff: 0.6 },
   envIntensity: 1.0,
+  adapt: { ref: -2.0, strength: 0.0, min: -0.6, max: 1.2 },
 };
 
 export interface RenderDebugApi {
@@ -54,6 +57,7 @@ export interface RenderDebugApi {
   setAO(enabled: boolean): void;
   setMotionBlur(enabled: boolean): void;
   aoPass: N8AOPostPass | null;
+  readAdaptation(): [number, number];
 }
 
 type SunLike = THREE.Light & { shadow: THREE.LightShadow; target: THREE.Object3D };
@@ -133,6 +137,13 @@ export async function createRenderPipeline(ctx: GameContext): Promise<RenderPipe
   atmoPass.shaftsEnabled = tier >= 1;
   composer.addPass(atmoPass);
 
+  const exposurePass = new ExposurePass();
+  composer.addPass(exposurePass);
+
+  const mbPass = new MotionBlurPass(camera, tier >= 3 ? 12 : 8);
+  mbPass.enabled = tier >= 2;
+  composer.addPass(mbPass);
+
   const vmPass = new ViewmodelPass(viewmodelScene, viewmodelCamera);
   composer.addPass(vmPass);
 
@@ -141,6 +152,7 @@ export async function createRenderPipeline(ctx: GameContext): Promise<RenderPipe
     intensity: tuning.bloom.intensity, radius: 0.72, levels: tier <= 0 ? 5 : 7,
   });
   const grade = new GradeEffect();
+  grade.u('tAdapt').value = exposurePass.texture;
   composer.addPass(new EffectPass(camera, bloom, grade));
 
   const smaa = new SMAAEffect({
@@ -244,6 +256,25 @@ export async function createRenderPipeline(ctx: GameContext): Promise<RenderPipe
     savedEnvRot.clear();
   };
 
+  // Other modules sometimes assign the material library's fallback IBL (ctx.materials.envMap) directly
+  // to material.envMap. That env doesn't match our sky and isn't rotated for the viewmodel, so hand
+  // those materials back to scene.environment (periodic scan: cheap, catches late-spawned objects).
+  let scanCountdown = 0;
+  const releaseFallbackEnv = () => {
+    const fallback = ctx.materials?.envMap ?? null;
+    if (!fallback) return;
+    const visit = (o: THREE.Object3D) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      if (!m) return;
+      for (const mm of Array.isArray(m) ? m : [m]) {
+        const sm = mm as THREE.MeshStandardMaterial;
+        if (sm && sm.envMap === fallback) { sm.envMap = null; sm.needsUpdate = true; }
+      }
+    };
+    scene.traverse(visit);
+    viewmodelScene.traverse(visit);
+  };
+
   const setSize = (w: number, h: number) => {
     composer.setSize(w, h, false);
     viewmodelCamera.aspect = w / Math.max(1, h);
@@ -261,6 +292,7 @@ export async function createRenderPipeline(ctx: GameContext): Promise<RenderPipe
         viewmodelCamera.updateProjectionMatrix();
       }
       sky.update(time);
+      if (--scanCountdown <= 0) { releaseFallbackEnv(); scanCountdown = 90; }
       // viewmodel sun occlusion (world shadows onto the gun, coarse)
       const target = sunVisibility();
       if (!vmVisInit) { vmSunVis = target; vmVisInit = true; }
@@ -269,6 +301,10 @@ export async function createRenderPipeline(ctx: GameContext): Promise<RenderPipe
       flashAmt *= Math.exp(-dt * 5.5);
       if (flashAmt < 1e-3) flashAmt = 0;
       grade.u('exposure').value = tuning.exposure;
+      grade.u('tAdapt').value = exposurePass.texture;
+      grade.u('adaptRef').value = tuning.adapt.ref;
+      grade.u('adaptStrength').value = tuning.adapt.strength;
+      (grade.u('adaptRange').value as THREE.Vector2).set(tuning.adapt.min, tuning.adapt.max);
       grade.u('flash').value = flashAmt;
       grade.u('damage').value = damage;
       grade.u('ads').value = ads;
@@ -310,8 +346,9 @@ export async function createRenderPipeline(ctx: GameContext): Promise<RenderPipe
         applySun();
         applyTuning();
       },
+      readAdaptation() { return exposurePass.read(renderer); },
       setAO(enabled: boolean) { if (aoPass) aoPass.enabled = enabled; },
-      setMotionBlur() { /* not implemented yet */ },
+      setMotionBlur(enabled: boolean) { mbPass.enabled = enabled; mbPass.reset(); },
     },
   };
   return pipeline;

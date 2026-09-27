@@ -35,6 +35,9 @@ export interface FXExtras {
   readonly textures: { flipbook: THREE.Texture; decalAlbedo: THREE.Texture; decalNormal: THREE.Texture };
 }
 
+/** Dev/test overrides (set before createFX). */
+export const fxOptions = { flipRes: 0 };
+
 interface Tier {
   mult: number; smoke: number; streaks: number; decals: number; bigDecals: number; debris: number; casings: number;
   motes: number; lights: number; flipRes: number; atlasCell: number; smokeShadows: boolean; casingLife: number;
@@ -89,14 +92,14 @@ interface SurfaceLook {
   tint: [number, number, number];
 }
 const LOOK: Partial<Record<Surface, SurfaceLook>> = {
-  concrete: { dust: [0.58, 0.55, 0.5], chip: [0.5, 0.48, 0.45], grain: [0.4, 0.38, 0.35], decal: [Cell.ConcreteA, Cell.ConcreteB], decalSize: [0.22, 0.3], tint: [1, 1, 1] },
+  concrete: { dust: [0.68, 0.65, 0.6], chip: [0.5, 0.48, 0.45], grain: [0.4, 0.38, 0.35], decal: [Cell.ConcreteA, Cell.ConcreteB], decalSize: [0.22, 0.3], tint: [1, 1, 1] },
   brick: { dust: [0.6, 0.42, 0.33], chip: [0.5, 0.26, 0.18], grain: [0.45, 0.25, 0.18], decal: [Cell.ConcreteA, Cell.ConcreteB], decalSize: [0.22, 0.28], tint: [1, 0.72, 0.62] },
   asphalt: { dust: [0.36, 0.35, 0.33], chip: [0.12, 0.12, 0.12], grain: [0.18, 0.18, 0.17], decal: [Cell.ConcreteA, Cell.ConcreteB], decalSize: [0.2, 0.26], tint: [0.5, 0.5, 0.5] },
   tile: { dust: [0.75, 0.74, 0.7], chip: [0.8, 0.78, 0.74], grain: [0.7, 0.7, 0.68], decal: [Cell.PlasterA, Cell.PlasterB], decalSize: [0.18, 0.24], tint: [0.9, 0.9, 0.9] },
   plaster: { dust: [0.86, 0.85, 0.81], chip: [0.85, 0.84, 0.8], grain: [0.8, 0.79, 0.76], decal: [Cell.PlasterA, Cell.PlasterB], decalSize: [0.28, 0.36], tint: [1, 1, 1] },
   metal: { dust: [0.42, 0.41, 0.4], chip: [0.3, 0.3, 0.3], grain: [0.2, 0.2, 0.2], decal: [Cell.MetalHole, Cell.MetalHole, Cell.MetalDent], decalSize: [0.12, 0.15], tint: [1, 1, 1] },
   wood: { dust: [0.52, 0.42, 0.31], chip: [0.58, 0.42, 0.26], grain: [0.45, 0.32, 0.2], decal: [Cell.WoodA, Cell.WoodB], decalSize: [0.17, 0.23], tint: [1, 1, 1] },
-  dirt: { dust: [0.4, 0.31, 0.22], chip: [0.26, 0.19, 0.13], grain: [0.2, 0.14, 0.09], decal: [Cell.DirtA], decalSize: [0.26, 0.34], tint: [1, 1, 1] },
+  dirt: { dust: [0.36, 0.28, 0.2], chip: [0.26, 0.19, 0.13], grain: [0.2, 0.14, 0.09], decal: [Cell.DirtA], decalSize: [0.26, 0.34], tint: [1, 1, 1] },
   gravel: { dust: [0.48, 0.44, 0.38], chip: [0.4, 0.38, 0.35], grain: [0.3, 0.27, 0.23], decal: [Cell.DirtA], decalSize: [0.24, 0.3], tint: [0.9, 0.95, 1] },
   sand: { dust: [0.74, 0.63, 0.46], chip: [0.6, 0.5, 0.36], grain: [0.62, 0.52, 0.37], decal: [Cell.DirtA], decalSize: [0.26, 0.32], tint: [1, 1, 1] },
   glass: { dust: [0.8, 0.82, 0.84], chip: [0.75, 0.85, 0.9], grain: [0.8, 0.85, 0.9], decal: [Cell.GlassA, Cell.GlassB], decalSize: [0.34, 0.5], tint: [1, 1, 1] },
@@ -113,7 +116,7 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
   ctx.scene.add(group);
 
   // ---------------------------------------------------------------- resources
-  const flip = generateSmokeFlipbook(renderer, tier.flipRes);
+  const flip = generateSmokeFlipbook(renderer, fxOptions.flipRes || tier.flipRes);
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const atlas = generateDecalAtlas(tier.atlasCell, aniso);
   const envMap = (ctx.materials && ctx.materials.envMap) || null;
@@ -268,7 +271,7 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
       const shade = range(0.9, 1.08);
       S.color(rgb[0] * shade, rgb[1] * shade, rgb[2] * shade, opacity * range(0.8, 1.1));
       S.plane(n, p);
-      S.fadeIn = 0.03; S.fadePow = 1.6; S.growPow = growPow * range(0.8, 1.2);
+      S.fadeIn = 0.012; S.fadePow = 1.6; S.growPow = growPow * range(0.8, 1.2);
       smoke.spawn(S);
     }
   }
@@ -377,20 +380,20 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
         const heavy = surface !== 'sand';
         // upward-biased plume axis
         _v2.copy(n).add(_up).normalize().lerp(jet, 0.3).normalize();
-        for (let i = 0; i < count(5 * m + 2); i++) {
-          cone(_v2, 0.35, _v);
-          const sp = range(3.5, 8.5);
+        for (let i = 0; i < count(7 * m + 3); i++) {
+          cone(_v2, 0.3, _v);
+          const sp = range(4, 11) * (heavy ? 1 : 0.8);
           S.reset().at(p).vel(_v.x * sp, _v.y * sp, _v.z * sp);
-          S.life = range(0.9, 1.6); S.size0 = range(0.05, 0.12); S.size1 = range(0.45, 0.8);
-          S.rot = rand() * 6.28; S.rotSpeed = range(-1, 1); S.drag = range(4, 6); S.accelY = heavy ? -2.2 : -1.2;
-          S.frame0 = range(0, 8); S.frameRate = 0.9;
-          const sh = range(0.85, 1.1);
-          S.color(look.dust[0] * sh, look.dust[1] * sh, look.dust[2] * sh, range(0.6, 0.85));
-          S.plane(n, p); S.fadeIn = 0.03; S.fadePow = 1.4;
+          S.life = range(1.3, 2.2); S.size0 = range(0.08, 0.16); S.size1 = range(0.7, 1.2);
+          S.rot = rand() * 6.28; S.rotSpeed = range(-1, 1); S.drag = range(3.2, 4.5); S.accelY = heavy ? -2.6 : -1.6;
+          S.frame0 = range(0, 8); S.frameRate = 0.9; S.growPow = 4;
+          const sh = range(0.8, 1.1);
+          S.color(look.dust[0] * sh, look.dust[1] * sh, look.dust[2] * sh, range(0.7, 0.9));
+          S.plane(n, p); S.fadeIn = 0.01; S.fadePow = 1.4;
           smoke.spawn(S);
         }
-        puff(p, n, look.dust, count(2 * m + 1), 0.8, 2.0, 0.9, 0.9, 0.35, 0.05, 3);
-        grains(p, n, _v2, look.grain, count((heavy ? 18 : 26) * m + 4), 5.5, 0.45, heavy ? 0.009 : 0.005, 0.9, floorY);
+        puff(p, n, look.dust, count(3 * m + 1), 1.2, 2.2, 1.2, 1.0, 0.4, 0.05, 3, 3);
+        grains(p, n, _v2, look.grain, count((heavy ? 30 : 40) * m + 6), 7, 0.45, heavy ? 0.014 : 0.007, 1.0, floorY);
         if (near && heavy) debris(chunks, p, n, _v2, look.chip, count(4 * m + 1), 0.01, 0.028, 4, 0.5, floorY, 'chunk', 2.5);
         break;
       }
@@ -430,10 +433,11 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
         // concrete, brick, asphalt, tile, plaster
         const powder = surface === 'plaster' || surface === 'tile';
         const size = powder ? 1.6 : 1.35;
-        puff(p, n, look.dust, count(4 * m + 1), size, powder ? 2.8 : 2.3, 1.6, 0.6, powder ? 0.42 : 0.34, 0.06, 4, 5);
-        puff(p, jet, look.dust, count(4 * m + 1), 0.75, 0.9, 10, 0.3, 0.45, 0, 8, 4);
-        grains(p, n, jet, look.grain, count(16 * m + 4), 7, 0.65, 0.008, 0.7, floorY);
-        if (near) debris(chunks, p, n, jet, look.chip, count(6 * m + 1), 0.006, 0.022, 4.5, 0.75, floorY, 'chunk');
+        flashDot(p, 0.06, 4, 3.2, 2.2, 0.03);
+        puff(p, n, look.dust, count(4 * m + 1), size, powder ? 2.8 : 2.3, 1.6, 0.6, powder ? 0.6 : 0.5, 0.06, 4, 5);
+        puff(p, jet, look.dust, count(4 * m + 1), 0.75, 0.9, 10, 0.3, 0.7, 0, 8, 4);
+        grains(p, n, jet, look.chip, count(18 * m + 5), 8, 0.6, 0.011, 0.75, floorY);
+        if (near) debris(chunks, p, n, jet, look.chip, count(7 * m + 2), 0.008, 0.026, 5, 0.75, floorY, 'chunk');
         if (surface !== 'plaster' && chance(0.14)) sparks(p, _refl, count(4 * m + 1), 7, 0.6, 9, 0.2, floorY, 0.005);
         break;
       }
@@ -457,15 +461,15 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
     _n.copy(normal).normalize();
     const big = headshot ? 1.35 : killed ? 1.15 : 1;
     // exit mist (along bullet) + entry puff (back toward shooter)
-    for (let i = 0; i < count(3 * m + 1); i++) {
+    for (let i = 0; i < count(4 * m + 2); i++) {
       const exit = i % 3 !== 2;
       cone(exit ? dir : _n, exit ? 0.45 : 0.7, _v);
       const sp = exit ? range(1.5, 3.5) : range(0.6, 1.5);
       S.reset().at(p).vel(_v.x * sp, _v.y * sp, _v.z * sp);
-      S.life = range(0.35, 0.6) * big; S.size0 = 0.06 * big; S.size1 = range(0.3, 0.5) * big;
+      S.life = range(0.4, 0.7) * big; S.size0 = 0.08 * big; S.size1 = range(0.4, 0.65) * big; S.growPow = 5;
       S.rot = rand() * 6.28; S.rotSpeed = range(-1.5, 1.5); S.drag = 6; S.accelY = -0.4;
       S.frame0 = range(4, 14); S.frameRate = 0.7;
-      S.color(range(0.2, 0.3), 0.012, 0.012, range(0.6, 0.85));
+      S.color(range(0.11, 0.16), 0.008, 0.007, range(0.75, 0.95));
       S.fadeIn = 0.02; S.fadePow = 1.3; S.scatter = 0.35; S.normalStrength = 0.7;
       smoke.spawn(S);
     }
@@ -476,7 +480,7 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
       const sp = range(1.5, 6);
       K.reset().at(p).vel(_v.x * sp, _v.y * sp, _v.z * sp);
       K.life = range(0.35, 0.8); K.width = range(0.003, 0.008); K.stretch = 0.03; K.drag = 1.2; K.gravity = 9.8;
-      K.color(0.2, 0.008, 0.008, 0.95); K.cool = 0; K.additive = 0; K.restitution = 0; K.floor(floorY);
+      K.color(0.1, 0.005, 0.004, 0.95); K.cool = 0; K.additive = 0; K.restitution = 0; K.floor(floorY);
       streaks.spawn(K);
     }
     // wall splatter behind the target
@@ -505,15 +509,15 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
     const dist = _v.length();
     if (dist < 1.5) return;
     _v.divideScalar(dist);
-    const speed = enemy ? 380 : 520;
-    const len = Math.min(dist * 0.45, enemy ? 5 : 7);
-    const r = enemy ? 22 : 18, g = enemy ? 5.5 : 8.5, b = enemy ? 2.2 : 3.2;
+    const speed = enemy ? 240 : 300;
+    const len = Math.min(dist * 0.5, enemy ? 4.5 : 6);
+    const r = enemy ? 26 : 22, g = enemy ? 6 : 10, b = enemy ? 2.4 : 3.6;
     // core + halo
     for (let k = 0; k < 2; k++) {
       K.reset().at(from).vel(_v.x * speed, _v.y * speed, _v.z * speed);
       K.life = dist / speed; K.stretch = len / speed; K.drag = 0.0005; K.gravity = 0;
-      K.width = k === 0 ? 0.016 : 0.07;
-      const s = k === 0 ? 1 : 0.1;
+      K.width = k === 0 ? 0.022 : 0.09;
+      const s = k === 0 ? 1 : 0.08;
       K.color(r * s, g * s, b * s, 1); K.cool = 0; K.additive = 1; K.constant = 1;
       streaks.spawn(K);
     }
@@ -591,26 +595,42 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
     const gp = _v3.set(p.x, onGround ? floorY : p.y, p.z);
     const s = R / 5;
     // light + camera
-    flashes.trigger(time, _v.copy(p).addScaledVector(_up, 0.8), 1.0, 0.55, 0.22, sunIntensity * 120 * s + 200 * s, R * 7, 0.5, true);
+    flashes.trigger(time, _v.copy(p).addScaledVector(_up, 0.8), 1.0, 0.55, 0.22, (sunIntensity * 8 + 50) * s, R * 6, 0.45, true);
     const d = camDist(p);
     try { ctx.player?.addCameraShake(THREE.MathUtils.clamp(1.4 * (1 - d / (R * 9)), 0, 1.4)); } catch { /* ignore */ }
     try { ctx.pipeline?.flash(THREE.MathUtils.clamp(0.7 * (1 - d / (R * 7)), 0, 0.7)); } catch { /* ignore */ }
 
     // blinding core
-    flashDot(_v.copy(p).addScaledVector(_up, 0.4 * s), 2.2 * s, 40, 26, 12, 0.07);
-    flashDot(_v, 6 * s, 3, 1.6, 0.6, 0.12);
+    flashDot(_v.copy(p).addScaledVector(_up, 0.5 * s), 1.3 * s, 24, 13, 5, 0.06);
+    flashDot(_v, 4 * s, 2.0, 0.9, 0.3, 0.1);
     // fireball: hot, fast-expanding lit+emissive puffs that cool into dark smoke
-    for (let i = 0; i < count(10 * m + 4); i++) {
+    for (let i = 0; i < count(14 * m + 5); i++) {
       cone(_up, 0.95, _v2);
-      const sp = range(3, 9) * s;
+      const sp = range(3, 10) * s;
       S.reset().at(p);
       S.py += 0.3 * s;
       S.vel(_v2.x * sp, _v2.y * sp * 0.8 + 1, _v2.z * sp);
-      S.life = range(0.9, 1.5); S.size0 = range(0.5, 0.9) * s; S.size1 = range(2.0, 3.0) * s;
+      S.life = range(1.0, 1.7); S.size0 = range(0.6, 1.0) * s; S.size1 = range(2.4, 3.6) * s; S.growPow = 5;
       S.rot = rand() * 6.28; S.rotSpeed = range(-1.2, 1.2); S.drag = 4.5; S.accelY = 2.5;
       S.frame0 = range(0, 6); S.frameRate = 0.9;
       S.color(0.1, 0.09, 0.08, 1);
       S.heat = range(1.0, 1.25); S.fadeIn = 0.01; S.fadePow = 1.0; S.scatter = 0.4;
+      if (onGround) S.plane(_up, gp);
+      smoke.spawn(S);
+    }
+    // dark smoke billowing out around the fireball
+    for (let i = 0; i < count(10 * m + 4); i++) {
+      cone(_up, 1.0, _v2);
+      const sp = range(4, 9) * s;
+      S.reset().at(p);
+      S.py += 0.5 * s;
+      S.vel(_v2.x * sp, _v2.y * sp * 0.7 + 1.5, _v2.z * sp);
+      S.life = range(2.5, 4); S.size0 = range(0.6, 1.0) * s; S.size1 = range(3.0, 4.2) * s; S.growPow = 4;
+      S.rot = rand() * 6.28; S.rotSpeed = range(-0.8, 0.8); S.drag = 3.2; S.accelY = 1.2;
+      S.frame0 = range(0, 10); S.frameRate = 0.8;
+      const sh = range(0.7, 1.0);
+      S.color(0.1 * sh, 0.095 * sh, 0.09 * sh, range(0.75, 0.95));
+      S.delay = range(0.03, 0.1); S.fadeIn = 0.03; S.fadePow = 1.3; S.scatter = 0.6;
       if (onGround) S.plane(_up, gp);
       smoke.spawn(S);
     }
@@ -670,15 +690,17 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
     grains(gp, _up, _up, [0.2, 0.15, 0.1], count(40 * m + 8), 12 * Math.sqrt(s), 0.8, 0.012, 1.5, floorY);
     debris(chunks, _pg.copy(gp).addScaledVector(_up, 0.1), _up, _up, [0.28, 0.25, 0.22], count(22 * m + 6), 0.02, 0.07, 11 * Math.sqrt(s), 0.8, floorY, 'chunk', 5);
     // scorch
-    if (onGround) bigDecals.add(_v.set(p.x, floorY, p.z), _up, Cell.Scorch, R * range(1.2, 1.6), rand() * 6.28, null, 0.95, 1, time);
+    if (onGround) bigDecals.add(_v.set(p.x, floorY, p.z), _up, Cell.Scorch, R * range(1.2, 1.6), rand() * 6.28, null, 0.95, 0.25, time);
   }
 
   function gust(): void {
     const cam = ctx.camera.getWorldPosition(_cam);
-    basis(windBase);
-    const side = range(-6, 6);
-    const back = range(3, 9);
-    _v.copy(cam).addScaledVector(windBase, -back).addScaledVector(_t1, side);
+    // start upwind of a point in front of the camera so the gust sweeps through the view
+    ctx.camera.getWorldDirection(_v2);
+    _v2.y = 0;
+    if (_v2.lengthSq() < 1e-4) _v2.set(0, 0, -1);
+    _v2.normalize();
+    _v.copy(cam).addScaledVector(_v2, range(5, 12)).addScaledVector(windBase, -range(3, 6));
     const fy = floorBelow(_v, 1.6);
     if (cam.y - fy > 6) return; // not near the ground
     _v.y = fy;
@@ -691,7 +713,7 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
       S.life = range(3, 5); S.size0 = range(0.4, 0.8); S.size1 = range(1.8, 3);
       S.rot = rand() * 6.28; S.rotSpeed = range(-0.4, 0.4); S.drag = 0.6; S.accelY = 0.05;
       S.frame0 = range(20, 40); S.frameRate = 0.4;
-      S.color(look.dust[0] * 0.85, look.dust[1] * 0.85, look.dust[2] * 0.85, range(0.08, 0.14));
+      S.color(look.dust[0] * 0.85, look.dust[1] * 0.85, look.dust[2] * 0.85, range(0.12, 0.2));
       S.nx = 0; S.ny = 1; S.nz = 0; S.d = -fy;
       S.fadeIn = 0.3; S.fadePow = 1; S.softMul = 0.9; S.delay = range(0, 0.8);
       smoke.spawn(S);

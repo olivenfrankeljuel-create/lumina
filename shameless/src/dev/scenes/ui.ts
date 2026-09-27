@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { createGame, tick } from '../../core/Game';
 import { EventBus } from '../../core/events';
 import { Input } from '../../core/Input';
 import type { EnemyInfo, GameContext, PlayerState, WeaponSystem } from '../../core/types';
@@ -17,9 +16,13 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   const hiddenUi = document.createElement('div'); // the game's own HUD instance lives here, unseen
   let ctx: GameContext;
   const lite = new URLSearchParams(location.search).has('lite');
+  let tick = liteTick;
   try {
     if (lite) throw new Error('lite mode');
-    ctx = await createGame({ container, uiRoot: hiddenUi, shotMode: true, noEnemies: true });
+    // Dynamic import: in lite mode we never touch the other modules (they may be mid-edit).
+    const game = await import('../../core/Game');
+    tick = game.tick;
+    ctx = await game.createGame({ container, uiRoot: hiddenUi, shotMode: true, noEnemies: true });
   } catch (err) {
     console.warn('[ui scene] createGame failed, using fallback backdrop', err);
     ctx = fallbackContext(container);
@@ -211,6 +214,14 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   };
   requestAnimationFrame(loop);
   window.__shameless.ready = true;
+}
+
+function liteTick(ctx: GameContext, dt: number): void {
+  ctx.time += dt;
+  ctx.player.update(dt);
+  ctx.hud.update(dt);
+  ctx.pipeline.render(dt);
+  ctx.input.endFrame();
 }
 
 /** Minimal stand-in when the full game can't be built (other modules mid-change). */

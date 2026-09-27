@@ -32,14 +32,14 @@ void main() {
   vec4 worldPosition = vec4(p, 1.0);
   vec4 mvPosition = viewMatrix * worldPosition;
   float px = uSize * (0.6 + 0.8 * fract(iSeed.w * 13.1)) * projectionMatrix[1][1] * 0.5 * uRes.y / max(-mvPosition.z, 0.01);
-  float energy = clamp(px / 1.3, 0.0, 1.0);
-  px = max(px, 1.3);
+  float energy = clamp(px / 1.5, 0.0, 1.0);
+  px = max(px, 1.5);
   vec4 clip = projectionMatrix * mvPosition;
   clip.xy += position.xy * px / (0.5 * uRes) * clip.w;
   gl_Position = clip;
   vUv = position.xy;
   float dist = -mvPosition.z;
-  vA = edge * energy * energy * smoothstep(0.25, 0.8, dist) * (0.7 + 0.3 * sin(uTime * 2.0 + ph * 3.0));
+  vA = edge * energy * smoothstep(0.3, 1.0, dist) * (0.7 + 0.3 * sin(uTime * 2.0 + ph * 3.0));
   vViewPos = mvPosition.xyz;
   #include <shadowmap_vertex>
   #include <fog_vertex>
@@ -108,7 +108,7 @@ void main() {
 export class Motes {
   readonly mesh: THREE.Mesh;
   readonly material: THREE.ShaderMaterial;
-  constructor(count: number, box = 14) {
+  constructor(count: number, box = 9) {
     const geo = new THREE.InstancedBufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
     geo.setIndex([0, 1, 2, 0, 2, 3]);
@@ -125,7 +125,7 @@ export class Motes {
         {
           uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uBox: { value: box },
           uWind: { value: new THREE.Vector3(0.3, 0.02, 0.1) }, uRes: { value: new THREE.Vector2(1920, 1080) },
-          uSize: { value: 0.0035 }, uTint: { value: new THREE.Color(1.0, 0.93, 0.82) }, uIntensity: { value: 1.0 },
+          uSize: { value: 0.006 }, uTint: { value: new THREE.Color(1.0, 0.93, 0.82) }, uIntensity: { value: 1.6 },
         },
       ]),
       lights: true,

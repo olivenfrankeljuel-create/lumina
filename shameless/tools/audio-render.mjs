@@ -61,8 +61,12 @@ const load = async () => {
 // Evaluate with a reload-and-retry if the page navigated (e.g. a dev server reload).
 const ev = async (fn, arg) => {
   for (let attempt = 0; ; attempt++) {
-    try { return await page.evaluate(fn, arg); } catch (e) {
-      if (attempt >= 2 || !/context was destroyed|navigation|__shameless/.test(e.message)) throw e;
+    try {
+      let timer;
+      const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('evaluate timeout (hung page)')), 150000); });
+      try { return await Promise.race([page.evaluate(fn, arg), timeout]); } finally { clearTimeout(timer); }
+    } catch (e) {
+      if (attempt >= 2 || !/context was destroyed|navigation|__shameless|evaluate timeout/.test(e.message)) throw e;
       console.warn('page reloaded, retrying:', e.message.split('\n')[0]);
       await load();
     }
@@ -87,7 +91,8 @@ try {
     }
   }
   const mixNames = opt.mix === 'none' ? [] : opt.mix === 'all' ? info.mixes : opt.mix.split(',');
-  for (const name of mixNames) {
+  for (const [mi, name] of mixNames.entries()) {
+    if (mi > 0 || opt.sounds) await load(); // fresh page per mix: long offline renders are flaky in a page that already rendered a lot
     for (const dyn of opt.nodyn ? [true, false] : [true]) {
       const r = await ev(async ([n, d]) => await window.__shameless.api.exportMix(n, d), [name, dyn]);
       const base = dyn ? name : `${name}_nodyn`;

@@ -175,6 +175,162 @@ export class AtmospherePass extends Pass {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Camera motion blur (world layer only): reprojects each pixel with last frame's view-projection.
+
+export class MotionBlurPass extends Pass {
+  readonly uniforms: Record<string, THREE.IUniform>;
+  private worldCamera: THREE.PerspectiveCamera;
+  private prevViewProj = new THREE.Matrix4();
+  private hasPrev = false;
+  /** Fraction of the frame interval the virtual shutter is open. */
+  shutter = 0.4;
+
+  constructor(camera: THREE.PerspectiveCamera, samples = 8) {
+    super('MotionBlurPass');
+    this.worldCamera = camera;
+    this.needsDepthTexture = true;
+    this.uniforms = {
+      tDiffuse: { value: null }, tDepth: { value: null },
+      projInv: { value: new THREE.Matrix4() }, camWorld: { value: new THREE.Matrix4() },
+      prevViewProj: { value: new THREE.Matrix4() }, scale: { value: 0 },
+    };
+    this.fullscreenMaterial = fsMaterial('ShamelessMotionBlur', this.uniforms, /* glsl */`
+      precision highp float;
+      uniform sampler2D tDiffuse; uniform highp sampler2D tDepth;
+      uniform mat4 projInv; uniform mat4 camWorld; uniform mat4 prevViewProj; uniform float scale;
+      varying vec2 vUv;
+      float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+      void main() {
+        float z = texture2D(tDepth, vUv).r;
+        vec4 vp = projInv * vec4(vUv * 2.0 - 1.0, min(z, 0.99999) * 2.0 - 1.0, 1.0);
+        vp /= vp.w;
+        vec3 wp = (camWorld * vec4(vp.xyz, 1.0)).xyz;
+        vec4 pc = prevViewProj * vec4(wp, 1.0);
+        vec2 prevUv = pc.xy / pc.w * 0.5 + 0.5;
+        vec2 vel = (vUv - prevUv) * scale;
+        float len = length(vel);
+        vel *= min(1.0, 0.035 / max(len, 1e-5));   // clamp to 3.5% of the screen
+        vec4 c = texture2D(tDiffuse, vUv);
+        if (length(vel) < 0.0008) { gl_FragColor = c; return; }
+        const int N = SAMPLES;
+        float j = ign(gl_FragCoord.xy) - 0.5;
+        vec3 acc = vec3(0.0);
+        for (int i = 0; i < N; i++) {
+          float t = (float(i) + 0.5 + j) / float(N) - 0.5;
+          acc += texture2D(tDiffuse, vUv + vel * t).rgb;
+        }
+        gl_FragColor = vec4(acc / float(N), c.a);
+      }`, { SAMPLES: samples });
+  }
+
+  override setDepthTexture(depthTexture: THREE.Texture): void { this.uniforms.tDepth.value = depthTexture; }
+
+  /** Call when the camera teleports (respawn) to avoid a smeared frame. */
+  reset(): void { this.hasPrev = false; }
+
+  private _vp = new THREE.Matrix4();
+  override render(renderer: THREE.WebGLRenderer, inputBuffer: THREE.WebGLRenderTarget, outputBuffer: THREE.WebGLRenderTarget, deltaTime?: number): void {
+    const cam = this.worldCamera;
+    const u = this.uniforms;
+    this._vp.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    const dt = Math.max(1e-3, deltaTime ?? 1 / 60);
+    // shutter relative to a 60 Hz reference so blur length doesn't depend on frame rate
+    u.scale.value = this.hasPrev ? this.shutter * (1 / 60) / dt : 0;
+    u.tDiffuse.value = inputBuffer.texture;
+    u.projInv.value.copy(cam.projectionMatrixInverse);
+    u.camWorld.value.copy(cam.matrixWorld);
+    u.prevViewProj.value.copy(this.prevViewProj);
+    renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer);
+    renderer.render(this.scene, this.camera);
+    this.prevViewProj.copy(this._vp);
+    this.hasPrev = true;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Eye adaptation: measures centre-weighted average log luminance of the world HDR buffer (32x32
+// reduction -> 1x1) and temporally adapts it. Does not modify the frame (needsSwap = false).
+
+export class ExposurePass extends Pass {
+  private reduceRT = new THREE.WebGLRenderTarget(32, 32, { type: THREE.HalfFloatType, depthBuffer: false });
+  private adaptRT = [0, 1].map(() => new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType, depthBuffer: false }));
+  private reduceMat: THREE.ShaderMaterial;
+  private adaptMat: THREE.ShaderMaterial;
+  private quad: THREE.Mesh;
+  private qScene = new THREE.Scene();
+  private qCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private idx = 0;
+  private first = true;
+  /** Adaptation speed (1/s) towards brighter / darker. */
+  speedUp = 2.2;
+  speedDown = 1.2;
+  /** Adapted log2 luminance texture (R channel) for the grade shader. */
+  get texture(): THREE.Texture { return this.adaptRT[this.idx].texture; }
+
+  constructor() {
+    super('ExposurePass');
+    this.needsSwap = false;
+    this.reduceMat = fsMaterial('ShamelessLumReduce', { tInput: { value: null } }, /* glsl */`
+      uniform sampler2D tInput; varying vec2 vUv;
+      void main() {
+        vec2 o = vec2(0.25 / 32.0);
+        float acc = 0.0;
+        for (int i = 0; i < 4; i++) {
+          vec2 d = vec2(i == 0 || i == 3 ? -o.x : o.x, i < 2 ? -o.y : o.y);
+          vec3 c = texture2D(tInput, vUv + d).rgb;
+          acc += log2(max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
+        }
+        vec2 cd = (vUv - 0.5) * vec2(1.6, 1.0);
+        float w = exp(-dot(cd, cd) * 3.0);    // centre weighting
+        gl_FragColor = vec4(acc * 0.25 * w, w, 0.0, 1.0);
+      }`);
+    this.adaptMat = fsMaterial('ShamelessLumAdapt', { tReduce: { value: null }, tPrev: { value: null }, rate: { value: 1 } }, /* glsl */`
+      uniform sampler2D tReduce; uniform sampler2D tPrev; uniform float rate; varying vec2 vUv;
+      void main() {
+        vec2 acc = vec2(0.0);
+        for (int y = 0; y < 32; y++) for (int x = 0; x < 32; x++) acc += texelFetch(tReduce, ivec2(x, y), 0).rg;
+        float cur = acc.x / max(acc.y, 1e-4);
+        float prev = texelFetch(tPrev, ivec2(0), 0).r;
+        float k = rate >= 1.0 ? 1.0 : 1.0 - exp(-rate * (cur > prev ? UP : DOWN));
+        gl_FragColor = vec4(mix(prev, cur, k), cur, 0.0, 1.0);
+      }`, { UP: '1.0', DOWN: '1.0' });
+    this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.reduceMat);
+    this.quad.frustumCulled = false;
+    this.qScene.add(this.quad);
+  }
+
+  reset(): void { this.first = true; }
+
+  /** Debug: [adapted, current] log2 luminance. */
+  read(renderer: THREE.WebGLRenderer): [number, number] {
+    const b = new Float32Array(4);
+    renderer.readRenderTargetPixels(this.adaptRT[this.idx], 0, 0, 1, 1, b);
+    return [b[0], b[1]];
+  }
+
+  override render(renderer: THREE.WebGLRenderer, inputBuffer: THREE.WebGLRenderTarget, _out: THREE.WebGLRenderTarget, deltaTime?: number): void {
+    const dt = deltaTime ?? 1 / 60;
+    this.reduceMat.uniforms.tInput.value = inputBuffer.texture;
+    this.quad.material = this.reduceMat;
+    renderer.setRenderTarget(this.reduceRT); renderer.render(this.qScene, this.qCam);
+    const prev = this.adaptRT[this.idx], next = this.adaptRT[1 - this.idx];
+    this.adaptMat.uniforms.tReduce.value = this.reduceRT.texture;
+    this.adaptMat.uniforms.tPrev.value = prev.texture;
+    // asymmetric speed baked via defines would need recompiles; approximate with the mean
+    this.adaptMat.uniforms.rate.value = this.first ? 1.0 : Math.min(0.999, dt * 0.5 * (this.speedUp + this.speedDown));
+    this.quad.material = this.adaptMat;
+    renderer.setRenderTarget(next); renderer.render(this.qScene, this.qCam);
+    this.idx = 1 - this.idx;
+    this.first = false;
+  }
+
+  override dispose(): void {
+    super.dispose(); this.reduceRT.dispose(); this.adaptRT.forEach((r) => r.dispose());
+    this.reduceMat.dispose(); this.adaptMat.dispose();
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Viewmodel pass: renders the first-person scene into its own HDR target (own depth) and composites
 // it (premultiplied) over the world, with ADS depth of field applied to the weapon periphery.
 
@@ -256,6 +412,7 @@ export class GradeEffect extends Effect {
       uniform vec3 lift; uniform vec3 gammaV; uniform vec3 gain;
       uniform vec3 shadowTint; uniform vec3 highlightTint;
       uniform float vignette; uniform float tonemapMode;
+      uniform sampler2D tAdapt; uniform float adaptRef; uniform float adaptStrength; uniform vec2 adaptRange;
       vec3 RRTAndODTFit(vec3 v) { vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
       vec3 acesFitted(vec3 c) {
         const mat3 ACESIn = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
@@ -301,7 +458,9 @@ export class GradeEffect extends Effect {
         return clamp(mix(hp, t, 0.5 + 0.5 * k), 0.0, 1.0);
       }
       void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
-        vec3 c = max(inputColor.rgb, 0.0) * exposure * (1.0 + flash * 5.0);
+        float adapted = texture2D(tAdapt, vec2(0.5)).r;
+        float ev = clamp((adaptRef - adapted) * adaptStrength, adaptRange.x, adaptRange.y);
+        vec3 c = max(inputColor.rgb, 0.0) * exposure * exp2(ev) * (1.0 + flash * 5.0);
         c *= wb;
         float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
         // contrast in log space around mid grey
@@ -335,6 +494,8 @@ export class GradeEffect extends Effect {
         ['gain', new THREE.Uniform(new THREE.Vector3(1, 1, 1))],
         ['shadowTint', new THREE.Uniform(new THREE.Vector3(1, 1, 1))], ['highlightTint', new THREE.Uniform(new THREE.Vector3(1, 1, 1))],
         ['vignette', new THREE.Uniform(0.3)], ['tonemapMode', new THREE.Uniform(0)],
+        ['tAdapt', new THREE.Uniform(null)], ['adaptRef', new THREE.Uniform(0)], ['adaptStrength', new THREE.Uniform(0)],
+        ['adaptRange', new THREE.Uniform(new THREE.Vector2(-0.6, 1.2))],
       ]),
     });
   }

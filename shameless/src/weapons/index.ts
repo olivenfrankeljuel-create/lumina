@@ -81,16 +81,6 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     return { rightM, leftM };
   };
 
-  // Rifle grip frames (authored from contact point, finger direction and back-of-hand normal)
-  {
-    const gAxis = new THREE.Vector3(0, -0.957, 0.289);
-    void gAxis;
-    rifle.rightGrip.wrist = matToXf(wristFrame(new THREE.Vector3(0.0215, -0.083, 0.052), new THREE.Vector3(-0.30, -0.26, -0.92), new THREE.Vector3(0.93, 0.05, 0.32)).multiply(new THREE.Matrix4().makeTranslation(0, 0, 0)));
-    rifle.leftGrip.wrist = matToXf(wristFrame(new THREE.Vector3(-0.058, -0.052, -0.315), new THREE.Vector3(0.93, 0.2, -0.3), new THREE.Vector3(-0.42, -0.9, 0.0)));
-    pistol.rightGrip.wrist = matToXf(wristFrame(new THREE.Vector3(0.022, -0.074, 0.050), new THREE.Vector3(-0.28, -0.3, -0.91), new THREE.Vector3(0.93, 0.05, 0.3)));
-    pistol.leftGrip.wrist = matToXf(wristFrame(new THREE.Vector3(-0.045, -0.100, 0.02), new THREE.Vector3(0.62, 0.35, -0.7), new THREE.Vector3(-0.75, -0.6, -0.2)));
-  }
-
   const mkDef = (m: WeaponModel, o: Partial<WeaponDef>): WeaponDef => {
     const { rightM, leftM } = prepHands(m);
     const def = {
@@ -138,19 +128,15 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
   // Solve hand poses once per weapon (fingers wrap the actual surfaces).
   for (const d of defs) {
     const m = d.model;
-    // off hand on the magazine: authored in magazine space (mag front toward -Z, body down -Y)
-    const w = wristFrame(new THREE.Vector3(-0.0255, -0.066, -0.028), new THREE.Vector3(0.12, 0.25, -1), new THREE.Vector3(-1, 0.05, 0.1));
-    if (m.kind === 'pistol') w.copy(wristFrame(new THREE.Vector3(-0.024, -0.075, -0.012), new THREE.Vector3(0.1, 0.15, -1), new THREE.Vector3(-1, 0.05, 0.1)));
-    // wristFrame expects the palm contact; convert contact->wrist (palm center is 4.5cm up the hand, 1.6cm palmar)
-    d.magToWrist.copy(contactToWrist(w));
-    d.poseLMag = solveGrip(armL.hand, d.magToWrist, m.leftPoses.mag, POSE_FLAT, { maxFlex: [1.5, 1.7, 1.3] });
-    d.rightM = contactToWrist(d.rightM);
-    d.leftM = contactToWrist(d.leftM);
-    d.poseR = solveGrip(armR.hand, d.rightM, m.rightGrip, POSE_FLAT);
+    const lm = solveGrip(armL.hand, xfToMatrix4(m.leftPoses.mag.wrist), m.leftPoses.mag, POSE_FLAT, { maxFlex: [1.5, 1.7, 1.3] });
+    d.magToWrist.copy(lm.wrist); d.poseLMag = lm.pose;
+    const r = solveGrip(armR.hand, d.rightM, m.rightGrip, POSE_FLAT);
+    d.rightM.copy(r.wrist); d.poseR = r.pose;
     d.poseRIndexOff = clonePose(d.poseR);
     d.poseRIndexOff.f[0] = [0.1, 0.12, 0.06];
     d.poseRIndexOff.s[0] = 0.0;
-    d.poseL = solveGrip(armL.hand, d.leftM, m.leftGrip, POSE_FLAT);
+    const l = solveGrip(armL.hand, d.leftM, m.leftGrip, POSE_FLAT);
+    d.leftM.copy(l.wrist); d.poseL = l.pose;
   }
 
   // Now attach arms & weapons
@@ -343,14 +329,15 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
 
     // viewmodel recoil
     const vk = lerp(1, 0.45, adsE);
-    recoilSpring.impulse(2, d.vmKick * vk * (0.9 + rand() * 0.2));            // back
-    recoilSpring.impulse(1, 0.12 * vk);                                      // up
-    recoilSpring.impulse(3, d.vmRise * vk * (0.85 + rand() * 0.3));          // muzzle rise
-    recoilSpring.impulse(4, (rand() - 0.5) * 0.9 * vk);                      // yaw jitter
-    recoilSpring.impulse(5, (rand() - 0.5) * 2 * d.vmRoll * vk);             // roll jitter
-    recoilSpring.impulse(0, (rand() - 0.5) * 0.12 * vk);
-    recoilSlow.impulse(2, 0.18 * vk);
-    recoilSlow.impulse(3, 0.10 * vk);
+    // (impulses are initial velocities in m/s and rad/s; springs ~8.5Hz so peak ~ v / 75)
+    recoilSpring.impulse(2, 1.45 * d.vmKick * vk * (0.9 + rand() * 0.2));      // back
+    recoilSpring.impulse(1, 0.16 * vk);                                        // up
+    recoilSpring.impulse(3, 1.9 * d.vmRise * vk * (0.85 + rand() * 0.3));      // muzzle rise
+    recoilSpring.impulse(4, (rand() - 0.5) * 0.8 * vk);                        // yaw jitter
+    recoilSpring.impulse(5, (rand() - 0.5) * 2.4 * d.vmRoll * vk);             // roll jitter
+    recoilSpring.impulse(0, (rand() - 0.5) * 0.14 * vk);
+    recoilSlow.impulse(2, 0.16 * vk);
+    recoilSlow.impulse(3, 0.07 * vk);
 
     // spread bloom
     bloom = Math.min(d.bloomMax, bloom + d.bloomShot);
@@ -374,7 +361,7 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
 
   // ------------------------------------------------------------------ per-frame
   const input = ctx.input;
-  ctx.events.on('player:jump', () => { impulseSpring.impulse(1, -0.35); impulseSpring.impulse(3, -0.5); });
+  ctx.events.on('player:jump', () => { impulseSpring.impulse(1, -0.3); impulseSpring.impulse(3, -0.45); });
   ctx.events.on('player:land', (e) => {
     const s = clamp(e.impactSpeed / 8, 0.15, 1.2);
     impulseSpring.impulse(1, -0.9 * s); impulseSpring.impulse(3, -1.4 * s); impulseSpring.impulse(5, (rand() - 0.5) * s);
@@ -554,12 +541,13 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
       for (let i = 0; i < 6; i++) poseXf[i] += tmpArr[i];
     }
     const sv = swaySpring.value, iv = impulseSpring.value, rv = recoilSpring.value, rs = recoilSlow.value;
-    poseXf[0] += bx + sv[0] + iv[0] + rv[0] * 0.02;
-    poseXf[1] += by + iy + sv[1] + iv[1] * 0.03 + rv[1] * 0.02;
-    poseXf[2] += iv[2] * 0.03 + rv[2] * 0.02 + rs[2] * 0.03;
-    poseXf[3] += bPitch + ipitch + sv[3] + iv[3] * 0.03 + rv[3] * 0.03 + rs[3] * 0.03;
-    poseXf[4] += bYaw + iyaw + sv[4] + iv[4] * 0.03 + rv[4] * 0.03;
-    poseXf[5] += bRoll + iroll + sv[5] + iv[5] * 0.03 + rv[5] * 0.03;
+    // spring values are meters / radians
+    poseXf[0] += bx + sv[0] + iv[0] + rv[0];
+    poseXf[1] += by + iy + sv[1] + iv[1] + rv[1];
+    poseXf[2] += iv[2] + rv[2] + rs[2];
+    poseXf[3] += bPitch + ipitch + sv[3] + iv[3] + rv[3] + rs[3];
+    poseXf[4] += bYaw + iyaw + sv[4] + iv[4] + rv[4];
+    poseXf[5] += bRoll + iroll + sv[5] + iv[5] + rv[5];
 
     // holder = T(pos) * R(rot) * T(-pivot)
     _e.set(poseXf[3], poseXf[4], poseXf[5], 'YXZ');

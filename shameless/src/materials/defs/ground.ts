@@ -6,44 +6,47 @@ export const asphalt: MatDef = {
 void gen(vec2 uv, inout Surf s) {
   // aggregate: stones 4-12mm (texel ~4mm at 1024)
   vec4 ag = worleyT(uv, 420.0, 1.0, 1.0);
-  float stone = smoothstep(0.55, 0.25, ag.x) * step(0.35, ag.z);
+  float stone = smoothstep(0.5, 0.25, ag.x) * step(0.45, ag.z);
   vec4 ag2 = worleyT(uv, 180.0, 1.0, 2.0);
   float bigStone = smoothstep(0.5, 0.2, ag2.x) * step(0.72, ag2.z);
   float fines = fbm(uv, 700.0, 2, 3.0) * 0.5 + 0.5;
   // wear: binder eroded in wheel paths / macro areas exposes stones
   float worn = smoothstep(0.35, 0.75, fbm(uv + warp(uv, 2.0, 3, 0.08, 4.0), 3.0, 5, 5.0) * 0.5 + 0.5);
-  // alligator cracks in patches
+  // long cracks + fine alligator crazing in a few zones
+  float crL = cracks(uv, 5.0, 0.008, 0.5, 9.0);
   vec2 cq = uv + warp(uv, 6.0, 3, 0.012, 6.0);
-  vec4 vc = voronoiT(cq, 26.0, 0.85, 7.0);
-  float crackZone = smoothstep(0.55, 0.7, fbm(uv, 3.0, 4, 8.0) * 0.5 + 0.5);
-  float cr = (1.0 - smoothstep(0.0, 0.035 + 0.03 * fines, vc.x)) * crackZone;
-  float crL = cracks(uv, 5.0, 0.012, 0.5, 9.0);
-  cr = max(cr, crL);
-  // tar-sealed crack lines (glossy black strips)
+  vec4 vc = voronoiT(cq, 30.0, 0.85, 7.0);
+  float crackZone = smoothstep(0.62, 0.75, fbm(uv, 3.0, 4, 8.0) * 0.5 + 0.5);
+  float allig = (1.0 - smoothstep(0.0, 0.02 + 0.03 * fines, vc.x)) * crackZone * smoothstep(0.35, 0.6, noiseT(uv, 60.0, 19.0) * 0.5 + 0.5);
+  float cr = max(allig * 0.8, crL);
+  // tar-sealed crack lines (glossy, narrow, slightly raised)
   float sealN = voronoiT(uv + warp(uv, 3.0, 3, 0.02, 10.0), 4.0, 0.9, 11.0).x;
-  float seal = (1.0 - smoothstep(0.012, 0.03, sealN)) * smoothstep(0.45, 0.6, fbm(uv, 4.0, 3, 12.0) * 0.5 + 0.5);
-  // repair patches (square-ish, darker, smoother)
-  vec2 pc = floor(uv * 3.0); vec3 ph = hash3(pc, vec2(3.0), 13.0);
-  vec2 pf = fract(uv * 3.0);
-  vec2 pr = abs(pf - ph.xy * 0.4 - 0.3) - vec2(0.12 + ph.z * 0.1, 0.1 + ph.x * 0.12);
-  float patchD = max(pr.x, pr.y) + fbm(uv, 40.0, 2, 14.0) * 0.01;
-  float patchM = (1.0 - smoothstep(-0.002, 0.002, patchD)) * step(0.55, ph.z);
-  // oil stains
-  float oil = smoothstep(0.6, 0.85, fbm(uv + warp(uv, 6.0, 2, 0.02, 15.0), 6.0, 5, 16.0) * 0.5 + 0.5);
-
-  vec3 binder = srgb(vec3(66, 64, 62)) * (0.85 + 0.3 * fines);
-  vec3 stoneCol = mix(srgb(vec3(118, 114, 108)), srgb(vec3(150, 138, 124)), hash1(vec2(floor(ag.z * 64.0)), vec2(64.0), 17.0));
-  vec3 col = mix(binder, stoneCol, (stone * (0.35 + 0.65 * worn) + bigStone * 0.8));
+  float seal = (1.0 - smoothstep(0.006, 0.012, sealN)) * smoothstep(0.5, 0.62, fbm(uv, 4.0, 3, 12.0) * 0.5 + 0.5);
+  // repair patches: irregular outline, darker and smoother
+  vec2 pw = uv + warp(uv, 4.0, 3, 0.04, 20.0);
+  vec2 pc = floor(pw * 3.0); vec3 ph = hash3(pc, vec2(3.0), 13.0);
+  vec2 pf = fract(pw * 3.0);
+  vec2 pr = abs(pf - 0.5 - (ph.xy - 0.5) * 0.3) - vec2(0.12 + ph.z * 0.12, 0.1 + ph.x * 0.12);
+  float patchD = max(pr.x, pr.y) + fbm(uv, 40.0, 3, 14.0) * 0.012;
+  float patchM = (1.0 - smoothstep(-0.002, 0.002, patchD)) * step(0.6, ph.z);
+  float patchEdge = (1.0 - smoothstep(0.0, 0.01, abs(patchD))) * step(0.6, ph.z);
+  // oil / tyre drip stains
+  float oil = smoothstep(0.62, 0.85, fbm(uv + warp(uv, 6.0, 2, 0.02, 15.0), 6.0, 5, 16.0) * 0.5 + 0.5);
+  vec3 binder = srgb(vec3(70, 69, 67)) * (0.88 + 0.24 * fines);
+  vec3 stoneCol = mix(srgb(vec3(96, 93, 88)), srgb(vec3(122, 114, 104)), fract(ag.z * 13.7));
+  vec3 col = mix(binder, stoneCol, (stone * (0.25 + 0.5 * worn) + bigStone * 0.55));
   col *= 0.92 + 0.14 * (fbm(uv, 8.0, 4, 18.0) * 0.5 + 0.5);
-  col = mix(col, srgb(vec3(44, 44, 45)) * (0.9 + 0.2 * fines), patchM);
-  col = mix(col, srgb(vec3(24, 24, 25)), seal);
-  col = mix(col, col * vec3(0.55, 0.52, 0.5), oil * 0.7);
-  col *= 1.0 - cr * 0.6;
+  col = mix(col, srgb(vec3(56, 55, 54)) * (0.9 + 0.2 * fines), patchM);
+  col = mix(col, srgb(vec3(34, 34, 35)), seal);
+  col = mix(col, col * vec3(0.62, 0.6, 0.58), oil * 0.6);
+  col *= 1.0 - cr * 0.35;
+  col *= 1.0 - patchEdge * 0.15;
   col = mix(col, col * 1.12 + 0.01, worn * 0.25 * (1.0 - patchM)); // sun bleached
   s.albedo = col;
   float h = 0.6 + (stone * (0.12 + 0.12 * worn) + bigStone * 0.2) + fines * 0.06 - cr * 0.45;
   h = mix(h, 0.66 + fines * 0.04, patchM);
-  h = mix(h, 0.62, seal * 0.8);
+  h = mix(h, 0.7, seal * 0.9);
+  h -= patchEdge * 0.05;
   s.height = h;
   s.rough = clamp(0.84 + fines * 0.08 - seal * 0.4 - oil * 0.3 - patchM * 0.1 - stone * 0.05, 0.0, 1.0);
   s.ao = 1.0 - cr * 0.4;

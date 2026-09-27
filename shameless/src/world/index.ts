@@ -30,6 +30,7 @@ export async function createWorld(ctx: GameContext): Promise<World> {
   const foliageTex = makeFoliageAtlas();
   const clothTex = makeClothTexture();
   const farTex = makeFarFacadeTexture();
+  const tTex = performance.now();
   const cm = w.b.customMats;
   cm.set('custom:decal', new THREE.MeshStandardMaterial({
     name: 'world-decal', map: decalTex, transparent: true, depthWrite: false, polygonOffset: true,
@@ -45,12 +46,14 @@ export async function createWorld(ctx: GameContext): Promise<World> {
   (cm.get('custom:foliage') as THREE.MeshStandardMaterial).shadowSide = THREE.DoubleSide;
 
   buildMap(w);
+  const tMap = performance.now();
 
   const root = new THREE.Group();
   root.name = 'world';
   const tris = w.b.tris;
   const statics = w.b.build();
   root.add(statics);
+  const tMerge = performance.now();
 
   // ---- flutter (cloth, tarps, foliage): CPU-animated merged meshes
   const flutters: FlutterMesh[] = [];
@@ -96,8 +99,11 @@ export async function createWorld(ctx: GameContext): Promise<World> {
   });
 
   // ---- collision
+  const tShadow = performance.now();
   const colliders = w.b.buildColliders();
   ctx.physics.addStatic(colliders);
+  const tPhys = performance.now();
+  console.info(`[world] timings ms: textures ${(tTex - t0).toFixed(0)}, map ${(tMap - tTex).toFixed(0)}, merge ${(tMerge - tMap).toFixed(0)}, flutter+shadows ${(tShadow - tMerge).toFixed(0)}, physics ${(tPhys - tShadow).toFixed(0)}`);
 
   // ---- height lookup (0.5 m grid of ground-level pads; decks for elevated queries)
   const CELL = 0.5;

@@ -29,7 +29,7 @@ vec3 grain(vec2 uv, vec2 off, float rows, float s) {
   float ringCoord = q.y * rows * 5.0 + w * 2.0;
   float rings = fract(ringCoord);
   float late = smoothstep(0.55, 0.8, rings) * (1.0 - smoothstep(0.85, 1.0, rings));
-  float fiber = fbm(q, vec2(6.0, rows * 40.0), 3, 0.6, s + 9.0) * 0.5 + 0.5;
+  float fiber = fbm(q, vec2(6.0, rows * 40.0), 3, 0.6, s + 9.0) * 0.35 + fbm(q, vec2(3.0, rows * 120.0), 2, 0.6, s + 19.0) * 0.25 + 0.5;
   return vec3(fiber, late, rings);
 }
 `;
@@ -46,7 +46,7 @@ void gen(vec2 uv, inout Surf s) {
   vec3 g = grain(uv, off, rows, 3.0);
   vec3 kn = spots(uv + off * 0.0 + vec2(bh.z, 0.0), 6.0, 0.35, 0.05, 0.1, 4.0);
   float fiber = g.x, late = g.y;
-  float check = (1.0 - smoothstep(0.0, 0.05, abs(fbm(uv + off, vec2(3.0, rows * 3.0), 3, 0.5, 5.0)))) * smoothstep(0.55, 0.8, noiseT(uv + off, vec2(4.0, rows), 6.0) * 0.5 + 0.5);
+  float check = (1.0 - smoothstep(0.0, 0.025, abs(fbm(uv + off, vec2(3.0, rows * 3.0), 3, 0.5, 5.0)))) * smoothstep(0.6, 0.85, noiseT(uv + off, vec2(6.0, rows), 6.0) * 0.5 + 0.5);
   float gapY = smoothstep(0.0015, 0.0045, b.edgeY);
   float gapX = smoothstep(0.0005, 0.0025, b.edgeX);
   float edgeRound = smoothstep(0.0, 0.01, b.edgeY) * smoothstep(0.0, 0.006, b.edgeX);
@@ -55,21 +55,21 @@ void gen(vec2 uv, inout Surf s) {
   vec2 nl = vec2(min(b.local.x, b.lenM - b.local.x) - 0.035, abs(b.local.y - 2.0 / rows * 0.5) - 0.045);
   float nd = length(nl);
   float nail = 1.0 - smoothstep(0.0035, 0.0055, nd);
-  float nailStain = (1.0 - smoothstep(0.004, 0.02 + 0.01 * fiber, nd));
+  float nailStain = (1.0 - smoothstep(0.004, 0.012 + 0.006 * fiber, nd));
   float weather = smoothstep(0.3, 0.8, fbm(uv + off * 0.2, vec2(3.0, 6.0), 4, 0.5, 7.0) * 0.5 + 0.5 + bh.w * 0.3 - 0.15);
   vec3 brown = mix(srgb(vec3(122, 92, 64)), srgb(vec3(150, 116, 82)), bh.x);
   vec3 grey = mix(srgb(vec3(132, 124, 112)), srgb(vec3(156, 148, 134)), bh.y);
   vec3 col = mix(brown, grey, weather);
-  col *= 0.86 + 0.2 * fiber;
-  col *= 1.0 - late * 0.22;
+  col *= 0.8 + 0.4 * fiber;
+  col *= 1.0 - late * 0.28;
   col = mix(col, col * 0.6, kn.x);
-  col *= 1.0 - check * 0.5;
-  col = mix(col, srgb(vec3(60, 44, 34)), nailStain * 0.5);
+  col *= 1.0 - check * 0.3;
+  col = mix(col, srgb(vec3(60, 44, 34)), nailStain * 0.35);
   col = mix(col, vec3(0.2), nail);
   col *= 0.75 + 0.25 * edgeRound;
   float st = streaks(uv, 30.0, 8.0);
   col *= 1.0 - st * 0.12;
-  float h = 0.75 + cup * 0.06 + fiber * 0.04 + late * 0.08 * weather - check * 0.25 + kn.x * 0.04;
+  float h = 0.75 + cup * 0.06 + fiber * 0.08 + late * (0.04 + 0.1 * weather) - check * 0.25 + kn.x * 0.04;
   h = mix(0.05, h, gapY * gapX);
   h -= (1.0 - edgeRound) * 0.08;
   h += nail * 0.02;

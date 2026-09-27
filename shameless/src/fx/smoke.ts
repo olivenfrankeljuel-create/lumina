@@ -235,9 +235,10 @@ void main() {
   for (int i = 0; i < NUM_DIR_LIGHTS; i++) {{
     getDirectionalLightInfo(directionalLights[i], il);
     float ndl = dot(N, il.direction);
-    float wrap = max((ndl + 0.55) / 1.55, 0.0);
+    float wrap = max((ndl + 0.8) / 1.8, 0.0);
     float scat = phaseHG(dot(V, -il.direction), 0.6) * 4.0 * vScatter * (1.0 - thick * 0.85);
-    direct += il.color * (wrap * wrap * mix(1.0, 0.75, thick) + scat);}
+    // wrap diffuse + multiple-scattering transmission through thin parts + forward scatter
+    direct += il.color * (wrap * wrap * mix(1.0, 0.8, thick) + 0.18 * (1.0 - thick) + scat);}
   }
   #pragma unroll_loop_end
   #endif
@@ -246,9 +247,10 @@ void main() {
   for (int i = 0; i < NUM_SUN_LIGHTS; i++) {{
     getSunLightInfo(sunLights[i], il);
     float ndl = dot(N, il.direction);
-    float wrap = max((ndl + 0.55) / 1.55, 0.0);
+    float wrap = max((ndl + 0.8) / 1.8, 0.0);
     float scat = phaseHG(dot(V, -il.direction), 0.6) * 4.0 * vScatter * (1.0 - thick * 0.85);
-    direct += il.color * (wrap * wrap * mix(1.0, 0.75, thick) + scat);}
+    // wrap diffuse + multiple-scattering transmission through thin parts + forward scatter
+    direct += il.color * (wrap * wrap * mix(1.0, 0.8, thick) + 0.18 * (1.0 - thick) + scat);}
   }
   #pragma unroll_loop_end
   #endif
@@ -261,7 +263,7 @@ void main() {
   for (int i = 0; i < NUM_POINT_LIGHTS; i++) {{
     getPointLightInfo(pointLights[i], vViewPos, il);
     float ndl = dot(N, il.direction);
-    direct += il.color * (max(ndl, 0.0) * 0.6 + 0.4);}
+    direct += il.color * (max(ndl, 0.0) * 0.4 + 0.2);}
   }
   #pragma unroll_loop_end
   #endif
@@ -277,13 +279,13 @@ void main() {
   }
   #pragma unroll_loop_end
   #endif
-  irr *= mix(1.0, 0.6, thick);
+  irr *= mix(1.0, 0.78, thick);
 
   vec3 col = vColor.rgb * (direct + irr) * RECIPROCAL_PI;
 
   // fire / incandescence
-  float temp = vHeat * (0.45 + 0.75 * thick);
-  vec3 emis = fireRamp(clamp(temp, 0.0, 1.0)) * pow(clamp(temp, 0.0, 1.2), 1.6) * uHeatIntensity;
+  float temp = clamp(vHeat * (0.2 + 0.85 * thick), 0.0, 1.0);
+  vec3 emis = fireRamp(temp) * pow(temp, 2.2) * uHeatIntensity;
   col = col * (1.0 - clamp(vHeat, 0.0, 1.0) * 0.7) + emis;
 
   gl_FragColor = vec4(col, 1.0);
@@ -333,7 +335,7 @@ export class SmokeLayer {
           uWind: { value: new THREE.Vector3() },
           uAmbientAdd: { value: new THREE.Color(0, 0, 0) },
           uNearFade: { value: new THREE.Vector2(0.12, 0.7) },
-          uHeatIntensity: { value: 40 },
+          uHeatIntensity: { value: 16 },
         },
       ]),
       lights: true,

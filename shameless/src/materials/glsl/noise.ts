@@ -143,20 +143,35 @@ vec3 spots(vec2 uv, float F, float density, float rMin, float rMax, float s) {
 }
 
 // ---------------------------------------------------------------- material building blocks
-/** Hairline cracks: warped Voronoi borders, masked to sparse regions. Returns crack depth 0..1. */
+/** Hairline cracks: warped Voronoi borders broken into segments, masked to sparse regions.
+ *  width is in cell units (cell = 1/F tile). Returns crack depth 0..1 (tapered at segment ends). */
 float cracks(vec2 uv, float F, float width, float coverage, float s) {
-  vec2 q = uv + warp(uv, F * 0.5, 3, 0.35 / F, s + 5.0);
+  vec2 q = uv + warp(uv, F * 0.5, 3, 0.35 / F, s + 5.0) + warp(uv, F * 4.0, 2, 0.04 / F, s + 6.0);
   vec4 v = voronoiT(q, F, 0.9, s);
   float fine = fbm(uv, F * 4.0, 3, s + 9.0) * 0.5 + 0.5;
-  float line = 1.0 - smoothstep(0.0, width * (0.4 + fine), v.x);
-  float mask = smoothstep(1.0 - coverage, 1.0 - coverage + 0.15, fbm(uv, F * 0.5, 3, s + 21.0) * 0.5 + 0.5);
-  return line * mask;
+  float seg = smoothstep(0.42, 0.62, noiseT(uv, F * 2.0, s + 11.0) * 0.5 + 0.5);
+  float w = width * (0.3 + 1.2 * fine) * seg;
+  float line = (1.0 - smoothstep(0.0, max(w, 1e-4), v.x)) * step(1e-4, w);
+  float mask = smoothstep(1.0 - coverage, 1.0 - coverage + 0.12, fbm(uv, F * 0.5, 3, s + 21.0) * 0.5 + 0.5);
+  return line * mask * (0.5 + 0.5 * seg);
 }
-/** Vertical streaks (water/rust runs): long in y, thin in x. Returns 0..1. */
+/** Vertical runs (water/rust/dirt) that start at random heights and fade downward. fx = columns per tile. Returns 0..1. */
+float streakLayer(vec2 uv, float fx, float s) {
+  float x = uv.x * fx + noiseT(uv, vec2(fx * 0.25, 3.0), s + 1.0) * 0.35;
+  float col = floor(x);
+  vec3 h = hash3(vec2(col, 0.0), vec2(fx, 1.0), s);
+  float cx = fract(x) - 0.5 - (h.x - 0.5) * 0.5;
+  float len = 0.12 + 0.5 * h.y;
+  float t = fract(h.z - uv.y);                    // distance below the start point (tile units, wraps)
+  float along = t / len;
+  float fade = (1.0 - smoothstep(0.0, 1.0, along)) * smoothstep(0.0, 0.03, t);
+  float width = (0.12 + 0.3 * fract(h.x * 7.3)) * (1.0 - 0.5 * along);
+  float prof = 1.0 - smoothstep(0.0, width, abs(cx));
+  float breakup = smoothstep(0.25, 0.65, fbm(uv, vec2(fx, 8.0), 3, 0.5, s + 2.0) * 0.5 + 0.5);
+  return prof * fade * breakup * step(0.35, fract(h.y * 13.1));
+}
 float streaks(vec2 uv, float fx, float s) {
-  float n = fbm(uv + vec2(0.0, fbm(uv, vec2(fx * 0.25, 2.0), 2, 0.5, s + 3.0) * 0.02), vec2(fx, 1.0), 5, 0.55, s) * 0.5 + 0.5;
-  float n2 = noiseT(uv, vec2(fx * 0.125, 2.0), s + 7.0) * 0.5 + 0.5;
-  return saturate((n - 0.45) * 2.5) * smoothstep(0.35, 0.8, n2);
+  return clamp(max(streakLayer(uv, fx, s), streakLayer(uv + vec2(0.37, 0.61), fx * 2.0, s + 50.0) * 0.8), 0.0, 1.0);
 }
 /** Paint chips: returns 1 where paint is missing. */
 float chips(vec2 uv, float F, float amount, float s) {

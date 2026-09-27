@@ -48,6 +48,11 @@ function fireBurst(D: AudioDirector, t0: number, n: number, rpm: number, id = 'm
   }
 }
 
+const MIX_DUR: Record<string, number> = {
+  mix_rifle_auto_outdoor: 5.5, mix_rifle_auto_indoor: 5.5, mix_single_shots: 10, mix_suppressed_auto: 3.5, mix_enemy_distances: 11.5,
+  mix_explosion_near: 8, mix_firefight: 11, mix_foley: 9, mix_lowhealth: 7.5, mix_ambience: 24,
+};
+
 const SCENARIOS: Record<string, Scenario> = {
   mix_rifle_auto_outdoor: (E, D) => { D.startAmbience(0); fireBurst(D, 0.4, 30, 750); return 5.5; },
   mix_rifle_auto_indoor: (E, D) => { E.setIndoor(1, 0); D.startAmbience(0); fireBurst(D, 0.4, 30, 750, 'm4', false, 6); return 5.5; },
@@ -131,9 +136,7 @@ export default async function (_container: HTMLElement, uiRoot: HTMLElement) {
   const mixes = new Map<string, AudioBuffer>();
   const renderMix = async (name: string, dynamics = true) => {
     const sc = SCENARIOS[name];
-    // dry-run to get duration
-    const probe = new OfflineAudioContext(2, 128, SR);
-    const dur = sc(new AudioEngine(probe), new AudioDirector(new AudioEngine(probe)));
+    const dur = MIX_DUR[name];
     const off = new OfflineAudioContext({ numberOfChannels: 2, length: Math.ceil(dur * SR), sampleRate: SR });
     const E = new AudioEngine(off, off.destination, 1234, dynamics);
     for (const d of SOUND_DEFS) { const b = bank.get(d.name); if (b) E.addSound(d.name, b, d); }

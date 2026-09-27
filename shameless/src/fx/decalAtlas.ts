@@ -221,9 +221,9 @@ const blood = (variant: number): Painter => (x, y, o, s) => {
   const m = Math.max(main, drops);
   const thick = main * smooth(0.3 + edge, 0.05, r);
   o.h = m * 0.25 + thick * 0.2;
-  o.r = mix(0.3, 0.14, thick); o.g = mix(0.012, 0.004, thick); o.b = mix(0.012, 0.006, thick);
+  o.r = mix(0.1, 0.045, thick); o.g = mix(0.006, 0.003, thick); o.b = mix(0.005, 0.003, thick);
   o.a = m * 0.94;
-  o.rough = 0.28; o.metal = 0; o.heat = 0;
+  o.rough = 0.32; o.metal = 0; o.heat = 0;
 };
 
 const bloodDrip: Painter = (x, y, o, s) => {
@@ -247,7 +247,7 @@ const bloodDrip: Painter = (x, y, o, s) => {
   }
   const m = Math.max(splat, runs);
   o.h = m * 0.3;
-  o.r = mix(0.28, 0.13, splat); o.g = 0.008; o.b = 0.01;
+  o.r = mix(0.1, 0.045, splat); o.g = 0.005; o.b = 0.004;
   o.a = m * 0.93;
   o.rough = 0.25; o.metal = 0; o.heat = 0;
 };
@@ -263,7 +263,7 @@ const scorch: Painter = (x, y, o, s) => {
   const c = mix(0.02, 0.05, n) * (1 - center * 0.4);
   o.r = c * 1.05; o.g = c; o.b = c * 0.9;
   o.a = sat(a * 1.05) * 0.95;
-  o.rough = 1; o.metal = 0; o.heat = center * 0.6;
+  o.rough = 1; o.metal = 0; o.heat = Math.pow(center, 2) * 0.6 * (0.5 + n);
 };
 
 const smallHole: Painter = (x, y, o, s) => {

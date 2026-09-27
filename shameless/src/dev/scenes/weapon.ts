@@ -81,10 +81,17 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
       ctx.pipeline.render(1 / 60);
       ctx.input.endFrame();
       dirty--;
-      if (dirty === 0) { const w = waiters; waiters = []; w.forEach((f) => f()); }
+      if (dirty === 0) { gpuSync(ctx.renderer); const w = waiters; waiters = []; w.forEach((f) => f()); }
     }
     window.__shameless.frame++;
   };
   requestAnimationFrame(loop);
   window.__shameless.ready = true;
+}
+
+/** Blocks until the GPU has finished the queued frame (so screenshots don't time out on SwiftShader). */
+function gpuSync(r: { getContext(): WebGLRenderingContext | WebGL2RenderingContext }) {
+  const gl = r.getContext();
+  const px = new Uint8Array(4);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
 }

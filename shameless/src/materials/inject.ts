@@ -99,11 +99,31 @@ vec2 shParallax(vec2 uv, vec3 V, vec2 dx, vec2 dy, float depth) {
     d = 1.0 - textureGrad(shN, cuv, dx, dy).a;
     cur += layer;
   }
-  vec2 puv = cuv + delta;
-  float after = d - cur;
-  float before = (1.0 - textureGrad(shN, puv, dx, dy).a) - cur + layer;
-  float w = after / min(after - before, -1e-4);
-  return mix(cuv, puv, clamp(w, 0.0, 1.0));
+  if (cur == 0.0) return uv;
+  // binary refinement between the last two samples (removes stair-stepping on sharp height edges)
+  vec2 lo = cuv + delta, hi = cuv;
+  float loD = cur - layer, hiD = cur;
+  for (int j = 0; j < 5; j++) {
+    vec2 mid = (lo + hi) * 0.5;
+    float midD = (loD + hiD) * 0.5;
+    float hm = 1.0 - textureGrad(shN, mid, dx, dy).a;
+    if (midD >= hm) { hi = mid; hiD = midD; } else { lo = mid; loD = midD; }
+  }
+  return (lo + hi) * 0.5;
+}
+// Parallax self-shadowing toward the sun (Lt: tangent-space light dir). Returns 0..1 light visibility.
+float shParallaxShadow(vec2 uv, vec3 Lt, vec2 dx, vec2 dy, float depth) {
+  if (Lt.z <= 0.0) return 1.0;
+  float h0 = textureGrad(shN, uv, dx, dy).a;
+  vec2 dirUV = Lt.xy / max(Lt.z, 0.08) * depth;
+  float vis = 1.0;
+  for (int i = 1; i <= 8; i++) {
+    float t = float(i) / 8.0 * (1.0 - h0);
+    float h = textureGrad(shN, uv + dirUV * t, dx, dy).a;
+    float rayH = h0 + t;
+    vis = min(vis, 1.0 - clamp((h - rayH) * 12.0, 0.0, 1.0));
+  }
+  return vis;
 }
 #endif
 
@@ -119,6 +139,7 @@ mat3 shTangentFrame(vec3 q0, vec3 q1, vec2 st0, vec2 st1, vec3 surf_norm) {
 }
 
 // Accumulators
+float shPomShadow = 1.0;
 vec3 shAccA; float shAccOp; vec4 shAccO; vec3 shAccN; vec4 shAccM; float shAccH;
 
 void shAccumulate(ShTex t, float w, vec3 nOut, vec4 mac) {
@@ -151,7 +172,14 @@ void shProject(int axis, vec3 P, vec3 dPx, vec3 dPy, vec3 gN, float w, bool pom,
     vec3 V = normalize(cameraPosition - shPos);
     vec3 Vt = vec3(dot(V, T), dot(V, B), dot(V, gN));
     float fade = 1.0 - smoothstep(shPomFade * 0.6, shPomFade, length(cameraPosition - shPos));
-    if (fade > 0.0 && Vt.z > 0.0) uv = shParallax(uv, Vt, dx, dy, shPomDepth * fade);
+    if (fade > 0.0 && Vt.z > 0.0) {
+      uv = shParallax(uv, Vt, dx, dy, shPomDepth * fade);
+      #if NUM_DIR_LIGHTS > 0
+        vec3 Lw = normalize((vec4(directionalLights[0].direction, 0.0) * viewMatrix).xyz);
+        vec3 Lt = vec3(dot(Lw, T), dot(Lw, B), dot(Lw, gN));
+        shPomShadow = mix(1.0, shParallaxShadow(uv, Lt, dx, dy, shPomDepth), fade);
+      #endif
+    }
   }
 #endif
   ShTex t = shSample(uv, dx, dy);
@@ -285,7 +313,7 @@ const AO_FRAG = /* glsl */ `
   #endif
   float shDotNV = saturate(dot(geometryNormal, geometryViewDir));
   reflectedLight.indirectSpecular *= computeSpecularOcclusion(shDotNV, ao, material.roughness);
-  float micro = mix(1.0, ao, 0.6);
+  float micro = mix(1.0, ao, 0.6) * shPomShadow;
   reflectedLight.directDiffuse *= micro;
   reflectedLight.directSpecular *= micro;
 }

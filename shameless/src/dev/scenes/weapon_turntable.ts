@@ -72,10 +72,10 @@ export default async function (container: HTMLElement, _ui: HTMLElement) {
   let current = rifle;
   const poseHands = () => {
     const w = current;
-    const rw = xfToMatrix4(w.rightGrip.wrist), lw = xfToMatrix4(w.leftGrip.wrist);
-    const pr = solveGrip(armR.hand, rw, w.rightGrip, POSE_FLAT);
-    const pl = solveGrip(armL.hand, lw, w.leftGrip, POSE_FLAT);
-    armR.hand.applyPose(pr); armL.hand.applyPose(pl);
+    const sr = solveGrip(armR.hand, xfToMatrix4(w.rightGrip.wrist), w.rightGrip, POSE_FLAT);
+    const sl = solveGrip(armL.hand, xfToMatrix4(w.leftGrip.wrist), w.leftGrip, POSE_FLAT);
+    const rw = sr.wrist, lw = sl.wrist;
+    armR.hand.applyPose(sr.pose); armL.hand.applyPose(sl.pose);
     const base = w.root.matrix.clone();
     w.root.updateMatrix();
     const R = w.root.matrix.clone().multiply(rw), L = w.root.matrix.clone().multiply(lw);
@@ -134,10 +134,17 @@ export default async function (container: HTMLElement, _ui: HTMLElement) {
     if (dirty > 0) {
       renderer.render(scene, camera);
       dirty--;
-      if (dirty === 0) { const w = waiters; waiters = []; w.forEach((f) => f()); }
+      if (dirty === 0) { gpuSync(renderer); const w = waiters; waiters = []; w.forEach((f) => f()); }
     }
     window.__shameless.frame++;
   };
   loop();
   window.__shameless.ready = true;
+}
+
+/** Blocks until the GPU has finished the queued frame (so screenshots don't time out on SwiftShader). */
+function gpuSync(r: { getContext(): WebGLRenderingContext | WebGL2RenderingContext }) {
+  const gl = r.getContext();
+  const px = new Uint8Array(4);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
 }

@@ -69,7 +69,45 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   let draw: () => void;
   const prof: string[] = [];
 
-  if (single) {
+  if (single && params.get('view') === 'maps') {
+    // ---------------- raw baked maps, each tiled 2x2 to check seamless tiling
+    const set = lib.textures(single)!;
+    const panes: [string, THREE.Texture, string][] = [
+      ['albedo (sRGB)', set.albedo, 'vec3 c = t.rgb;'],
+      ['normal', set.normal, 'vec3 c = t.rgb;'],
+      ['height', set.normal, 'vec3 c = vec3(t.a);'],
+      ['AO', set.orm, 'vec3 c = vec3(t.r);'],
+      ['roughness', set.orm, 'vec3 c = vec3(t.g);'],
+      ['metal (r) / mask (g) / opacity (b)', set.orm, 'vec3 c = vec3(t.b, t.a, 0.0);'],
+    ];
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+    const qs = new THREE.Scene();
+    qs.add(quad);
+    const qc = new THREE.Camera();
+    const W = container.clientWidth, H = container.clientHeight;
+    const cw = Math.floor(W / 3), ch = Math.floor(H / 2);
+    const zoom = Number(params.get('zoom') ?? 2);
+    const mats = panes.map(([name, tex, code], i) => {
+      label(name, `left:${(i % 3) * cw + 8}px;top:${Math.floor(i / 3) * ch + 8}px`);
+      return new THREE.ShaderMaterial({
+        uniforms: { t0: { value: tex }, uOp: { value: set.albedo } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: `uniform sampler2D t0; uniform sampler2D uOp; varying vec2 vUv; void main(){ vec2 uv = vUv * ${zoom.toFixed(2)}; vec4 t = texture2D(t0, uv); ${code} ${i === 5 ? 'c.b = texture2D(uOp, uv).a;' : ''} gl_FragColor = vec4(c, 1.0); ${i === 0 ? 'gl_FragColor.rgb = pow(c, vec3(1.0/2.2));' : ''} }`,
+      });
+    });
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.setScissorTest(true);
+    label(single, 'left:50%;bottom:10px;transform:translate(-50%,0)');
+    draw = () => {
+      mats.forEach((m, i) => {
+        const x = (i % 3) * cw, y = H - (Math.floor(i / 3) + 1) * ch;
+        quad.material = m;
+        renderer.setViewport(x, y, cw, ch);
+        renderer.setScissor(x, y, cw, ch);
+        renderer.render(qs, qc);
+      });
+    };
+  } else if (single) {
     // ---------------- close-up
     const o = optsFromUrl();
     const arch = isArch(single);
@@ -107,7 +145,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
       else { camera.position.set(1.2, 1.0, 0.2); camera.lookAt(0.6, 0.5, -1.2); camera.fov = 35; }
     }
     sun.target.position.set(0, 0, -1.5);
-    const [az, el] = (params.get('sun') ?? '-70,14').split(',').map(Number);
+    const [az, el] = (params.get('sun') ?? '-65,22').split(',').map(Number);
     setSun(az, el);
     const ext = view === 'far' ? 40 : 8;
     Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, far: 80 });

@@ -242,8 +242,9 @@ export async function createHUD(ctx: GameContext, root: HTMLElement): Promise<HU
       <div class="sh-eq" data-k="lethal"><span class="key">G</span><span class="ico">${ICON_FRAG}</span><span class="n">2</span></div>
       <div class="sh-eq" data-k="tactical"><span class="key">4</span><span class="ico">${ICON_FLASH}</span><span class="n">2</span></div>
     </div>
+    <div class="sh-wname"></div>
     <div class="sh-wmain">
-      <div class="sh-wleft"><div class="sh-wname"></div><div class="sh-wicon"></div></div>
+      <div class="sh-wleft"><div class="sh-wicon"></div></div>
       <div class="sh-ammo">
         <div class="sh-mag">0</div>
         <div class="sh-ammo-side"><div class="sh-firemode"></div><div class="sh-reserve">0</div></div>
@@ -474,6 +475,11 @@ export async function createHUD(ctx: GameContext, root: HTMLElement): Promise<HU
     if (e.state === 'playing' && state === 'menu') api.hideMenu();
   });
   let wasAlive = true;
+  // Interact prompts until a typed event exists: window.dispatchEvent(new CustomEvent('shameless:prompt', { detail: { text, key, sub } }))
+  window.addEventListener('shameless:prompt', (e) => {
+    const d = (e as CustomEvent<{ text: string | null; key?: string; sub?: string } | null>).detail;
+    api.dev.interact(d?.text ?? null, d?.key, d?.sub);
+  });
 
   // ---------------------------------------------------------------- per-frame
   const fovCone = () => ctx.camera.fov * ctx.camera.aspect * 0.9;
