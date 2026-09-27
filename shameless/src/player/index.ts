@@ -710,7 +710,7 @@ export class PlayerController implements PlayerState {
     this._sprinting = false; this._tac = false;
     this.velocity.set(0, 0, 0);
     this.rig.punch(-0.2, 0, 0.1);
-    this.ctx.events.emit('player:jump', { position: this.position.clone() });
+    this.ctx.events.emit('player:mantle', { position: this.position.clone(), height: plan.height, vault: plan.kind === 'vault' });
     return true;
   }
 

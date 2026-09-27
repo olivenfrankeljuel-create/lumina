@@ -196,7 +196,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     for (const [k, v] of Object.entries(p as object)) d[k] = v instanceof THREE.Vector3 ? [+v.x.toFixed(3), +v.y.toFixed(3), +v.z.toFixed(3)] : v;
     events.push({ t: +ctx.time.toFixed(3), type, data: d });
   });
-  (['player:footstep', 'player:jump', 'player:land', 'player:slide', 'player:damaged', 'player:died', 'player:respawn'] as const).forEach(log);
+  (['player:footstep', 'player:jump', 'player:land', 'player:slide', 'player:mantle', 'player:damaged', 'player:died', 'player:respawn'] as const).forEach(log);
 
   // ---- HUD readout ----
   const hud = document.createElement('pre');

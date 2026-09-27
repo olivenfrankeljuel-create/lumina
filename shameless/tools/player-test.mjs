@@ -229,10 +229,12 @@ await test('curbs-crates', async () => {
 });
 
 await test('vault', async () => {
-  await api('api.teleport(30,0,-3,0);');
+  await api('api.teleport(30,0,-3,0); api.clearEvents();');
   await api("api.sim(0.25, ['forward']);");
   const s = await api("return api.sim(0.3, ['forward'], { tap: ['jump'] });");
   check('vault triggered on jump at 1.0 m thin wall', s.final.vaulting, s.final);
+  const mv = await api("return api.events.filter(e => e.type==='player:mantle').map(e => e.data);");
+  check('player:mantle emitted with vault=true', mv.length === 1 && mv[0].vault === true && mv[0].height > 0, mv);
   await shot('mid-vault');
   const e = await api("return api.until('!s.mantling && s.grounded', ['forward'], 2);");
   check('lands on far side', e.s.pos[2] < -6.4 && near(e.s.pos[1], 0, 0.06), e.s.pos);
