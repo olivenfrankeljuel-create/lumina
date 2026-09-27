@@ -311,7 +311,8 @@ export class MinimapView {
     const tx = dx > 0 ? (1 - 0.5) / dx : dx < 0 ? (0 - 0.5) / dx : Infinity;
     const ty = dy > 0 ? (1 - cyN) / dy : dy < 0 ? (0 - cyN) / dy : Infinity;
     const t = Math.min(tx, ty);
-    const x = 0.5 + dx * t, y = cyN + dy * t;
+    // keep the badge fully inside the frame
+    const x = Math.min(0.93, Math.max(0.07, 0.5 + dx * t)), y = Math.min(0.93, Math.max(0.07, cyN + dy * t));
     const key = `${(x * 100).toFixed(1)},${(y * 100).toFixed(1)}`;
     if (key === this.lastNorth) return;
     this.lastNorth = key;

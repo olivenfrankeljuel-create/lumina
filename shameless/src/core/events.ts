@@ -26,6 +26,7 @@ export interface GameEvents {
   'player:jump': { position: THREE.Vector3 };
   'player:land': { position: THREE.Vector3; impactSpeed: number; surface: Surface };
   'player:slide': { position: THREE.Vector3 };
+  'player:mantle': { position: THREE.Vector3; height: number; vault: boolean };
   'grenade:throw': { origin: THREE.Vector3; velocity: THREE.Vector3 };
   'grenade:bounce': { position: THREE.Vector3; surface: Surface; speed: number };
   'explosion': { position: THREE.Vector3; radius: number; damage: number };

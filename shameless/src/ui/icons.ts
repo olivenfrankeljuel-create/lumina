@@ -132,21 +132,27 @@ export function medalSvg(tier: number, color: string): string {
   </svg>`;
 }
 
-/** Damage-direction wedge. Drawn pointing up; rotated around the screen centre by CSS. */
+/** Damage-direction crescent. Drawn pointing up; rotated around the screen centre by CSS. */
 export const DAMAGE_ARC = `<svg viewBox="-100 -100 200 200" aria-hidden="true">
   <defs>
     <radialGradient id="shDmgGrad" cx="0" cy="0" r="100" gradientUnits="userSpaceOnUse">
-      <stop offset="0.62" stop-color="#ff2a1a" stop-opacity="0"/>
-      <stop offset="0.8" stop-color="#ff2a1a" stop-opacity="0.95"/>
-      <stop offset="0.92" stop-color="#b40c05" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#b40c05" stop-opacity="0"/>
+      <stop offset="0.83" stop-color="#ff2414" stop-opacity="0"/>
+      <stop offset="0.9" stop-color="#ff3020" stop-opacity="0.95"/>
+      <stop offset="0.965" stop-color="#c8140a" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#8a0a04" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="shDmgFade" x1="-1" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+    <linearGradient id="shDmgFade" x1="-40" y1="0" x2="40" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.3" stop-color="#fff" stop-opacity="0.85"/>
       <stop offset="0.5" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.7" stop-color="#fff" stop-opacity="0.85"/>
       <stop offset="1" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
+    <mask id="shDmgMask" maskUnits="userSpaceOnUse" x="-100" y="-100" width="200" height="200">
+      <rect x="-100" y="-100" width="200" height="200" fill="url(#shDmgFade)"/>
+    </mask>
   </defs>
-  <path d="M-38.5 -86.5 A95 95 0 0 1 38.5 -86.5 L27.6 -62 A68 68 0 0 0 -27.6 -62 Z" fill="url(#shDmgGrad)"/>
-  <path d="M-8 -66 L0 -73 L8 -66 L0 -69.5 Z" fill="#ff5040" fill-opacity="0.9"/>
+  <g mask="url(#shDmgMask)">
+    <path d="M-40.6 -91.2 A99.8 99.8 0 0 1 40.6 -91.2 L23.4 -81.7 A85 85 0 0 0 -23.4 -81.7 Z" fill="url(#shDmgGrad)"/>
+  </g>
 </svg>`;

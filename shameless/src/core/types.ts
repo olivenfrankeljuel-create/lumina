@@ -78,6 +78,11 @@ export interface RaycastHit {
   enemyId?: number;
   /** Hitbox region, for damage multipliers. */
   region?: 'head' | 'torso' | 'limb';
+  /** Material thickness along the ray from `point` (m); Infinity if > 1.5 m. World/prop hits only. */
+  thickness?: number;
+  exitPoint?: THREE.Vector3;
+  /** True when the ray hit the player capsule. */
+  player?: boolean;
 }
 
 export interface Physics {
@@ -117,6 +122,18 @@ export interface PlayerState {
   readonly crouched: boolean;
   readonly sliding: boolean;
   readonly lean: number; // -1..1
+  readonly stridePhase: number; // 0..1, footfalls at 0 and 0.5
+  readonly bobWeight: number;
+  readonly speed: number; // horizontal m/s
+  readonly sprintBlend: number; // 0..1 smoothed
+  readonly tacSprinting: boolean;
+  readonly tacSprintBlend: number;
+  readonly mantling: boolean;
+  readonly mantleProgress: number;
+  readonly crouchBlend: number;
+  readonly slideBlend: number;
+  readonly cameraRoll: number;
+  cancelSprint(): void;
   health: number;
   readonly maxHealth: number;
   readonly alive: boolean;

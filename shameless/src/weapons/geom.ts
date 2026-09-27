@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 
 /**
@@ -248,7 +248,10 @@ export function xform(g: THREE.BufferGeometry, x = 0, y = 0, z = 0, rx = 0, ry =
 
 /** Superellipsoid-ish rounded blob: sphere mapped through |c|^e, scaled. Good for palms/pads. */
 export function blob(rx: number, ry: number, rz: number, e = 0.6, ws = 24, hs = 16): THREE.BufferGeometry {
-  const g = new THREE.SphereGeometry(1, ws, hs);
+  let g: THREE.BufferGeometry = new THREE.SphereGeometry(1, ws, hs);
+  g.deleteAttribute('uv');
+  g.deleteAttribute('normal');
+  g = mergeVertices(g, 1e-5);
   const pos = g.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
