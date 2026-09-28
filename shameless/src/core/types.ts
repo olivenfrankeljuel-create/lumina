@@ -55,6 +55,8 @@ export interface MaterialOptions {
   seed?: number;
   /** Extra wear/dirt 0..1. */
   wear?: number;
+  /** Projection: 'world' (triplanar, static geometry), 'object' (triplanar in mesh space, moving/skinned), 'uv'. */
+  mapping?: 'world' | 'object' | 'uv';
 }
 
 export interface MaterialLibrary {
