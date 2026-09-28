@@ -13,8 +13,8 @@ import { createGame, tick } from '../../core/Game';
 const SHOTS: Record<string, [number, number, number, number, number, number?]> = {
   street: [2.2, 1.72, 53, 0.02, -0.03, 70],
   alley: [-21.6, 1.7, 47, 0.06, -0.02, 70],
-  courtyard: [29.5, 1.7, 15.5, -0.72, 0.02, 70],
-  rooftop: [13.6, 6.55 + 1.7, 15.2, 0.62, -0.2, 70],
+  courtyard: [33.5, 1.7, 17.5, -0.55, 0.02, 72],
+  rooftop: [10.5, 6.55 + 1.7, 25.5, 0.35, -0.22, 72],
   interior: [-11.2, 1.8, 16.8, 0.08, -0.04, 72],
   closeup: [-2.4, 1.6, 38.6, 1.45, 0.02, 60],
   market: [7.2, 1.75, 10.2, 1.1, -0.06, 70],

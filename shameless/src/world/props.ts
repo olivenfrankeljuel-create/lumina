@@ -228,7 +228,7 @@ export function jersey(w: WCtx, x: number, y: number, z: number, ry: number, len
 let bagTemplate: THREE.BufferGeometry | null = null;
 function bagGeo(): THREE.BufferGeometry {
   if (!bagTemplate) {
-    const g = new THREE.BoxGeometry(1, 1, 1, 6, 3, 4);
+    const g = new THREE.BoxGeometry(1, 1, 1, 4, 2, 3);
     displace(g, (v) => {
       const ax = Math.abs(v.x * 2), az = Math.abs(v.z * 2), ay = Math.abs(v.y * 2);
       const edge = Math.max(ax, az);

@@ -167,14 +167,14 @@ export function buildMap(w: WCtx) {
 function plaza(w: WCtx, rng: RNG) {
   const up = new THREE.Vector3(0, 1, 0);
   // raised paved square (y 0.15) with border band
-  w.b.boxMM(mk('tile_floor', 1), -14, -0.05, -12, 14, BASE, 12);
+  w.b.boxMM(mk('concrete_floor', 1), -14, -0.05, -12, 14, BASE, 12);
   w.b.colBox(0, (BASE - 0.05) / 2, 0, 28, BASE + 0.05, 24, 'tile');
   w.ground.push({ x0: -14, z0: -12, x1: 14, z1: 12, h: BASE });
   for (const z of [-12, 12]) {
     for (let i = 0; i < 28; i++) w.b.box(i % 2 ? mk('concrete', 1) : mk('concrete_dirty', 1), -13.5 + i, BASE / 2 - 0.02, z - Math.sign(z) * 0.1, 0.99, BASE + 0.07, 0.2);
   }
   // inner paving field in a different material
-  w.b.boxMM(mk('concrete_floor', 1), -9, BASE, -7, 9, BASE + 0.01, 7);
+  w.b.boxMM(mk('tile_floor', 3), -9, BASE, -7, 9, BASE + 0.01, 7);
   for (let i = 0; i < 30; i++) w.decal(rng.pick([D.DIRT, D.SAND, D.CRACKS, D.OIL, D.PAPERS, D.DIRT]), new THREE.Vector3(rng.range(-13, 13), BASE + 0.01, rng.range(-11, 11)), up, rng.range(1.2, 3.5), rng.range(1.2, 3.5), rng.range(0, 6), 0.006);
   // monument / dry fountain (central hard cover)
   fountain(w, 0, BASE, 0, rng);
@@ -210,9 +210,36 @@ function plaza(w: WCtx, rng: RNG) {
     w.b.addT(mk('concrete', 2), g, -3.6 + i * 1.8, BASE + 0.425, zc, 0);
     w.b.colBox(-3.6 + i * 1.8, BASE + 0.425, zc, 0.24, 0.85, 0.24, 'concrete');
   }
+  // bunting strung across the square
+  bunting(w, new THREE.Vector3(-14, 6.2, -9), new THREE.Vector3(14, 6.0, 7), rng);
+  bunting(w, new THREE.Vector3(-14, 5.8, 8), new THREE.Vector3(14, 6.3, -8), rng);
+  bunting(w, new THREE.Vector3(-7, 6.3, -12), new THREE.Vector3(7, 6.4, -12.2), rng);
   // lamp posts in plaza
   streetLight(w, -13.3, BASE, -2.5, 0);
   streetLight(w, 13.3, BASE, -1.0, Math.PI);
+}
+
+const FLAG_COLS = [0xb3261e, 0xf0e8d8, 0x1f6b3a, 0x151515, 0xd9b53a, 0x2c4a7a];
+function bunting(w: WCtx, a: THREE.Vector3, b: THREE.Vector3, rng: RNG) {
+  const sag = a.distanceTo(b) * 0.05;
+  cable(w, a, b, sag, 0.006);
+  const len = a.distanceTo(b);
+  const n = Math.floor(len / 0.45);
+  const ry = Math.atan2(-(b.z - a.z), b.x - a.x);
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const p = a.clone().lerp(b, t);
+    p.y -= sag * 4 * t * (1 - t);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([-0.15, 0, 0, 0.15, 0, 0, 0, -0.34, 0], 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 0.5, 0], 2));
+    g.setIndex([0, 2, 1]);
+    paint(g, new THREE.Color(FLAG_COLS[(i + rng.int(0, 1)) % FLAG_COLS.length]).multiplyScalar(0.85));
+    g.rotateY(ry);
+    g.translate(p.x, p.y, p.z);
+    w.addFlutter('custom:cloth', g, new Float32Array([0, 0, 1]), new THREE.Vector3(Math.sin(ry), 0, Math.cos(ry)), 0.08);
+  }
 }
 
 function fountain(w: WCtx, x: number, y: number, z: number, rng: RNG) {

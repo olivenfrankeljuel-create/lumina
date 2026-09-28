@@ -120,7 +120,7 @@ export class CameraRig {
     const dip = Math.min(0.25, 0.025 * Math.min(h, 1) + 0.0325 * Math.max(0, h - 1));
     const pitch = hard ? 0.07 : 0.004 + 0.006 * Math.min(h, 3) / 3;
     this.landY.impulse(-dip * this.landY.omega / 0.37);
-    this.landPitch.impulse(-pitch * this.landPitch.omega / 0.44);
+    this.landPitch.impulse(-pitch * this.landPitch.omega / 0.3);
     if (hard) this.punchRoll.impulse((Math.random() < 0.5 ? -1 : 1) * 0.03 * this.punchRoll.omega / 0.57);
   }
 

@@ -33,7 +33,7 @@ export function softGround(w: WCtx, key: string, x0: number, z0: number, x1: num
 
 /** Sidewalk strip with curb on the road side. roadSide: which edge (in x or z) touches the road. */
 export function sidewalk(w: WCtx, x0: number, z0: number, x1: number, z1: number, roadSide: 'x0' | 'x1' | 'z0' | 'z1', rng: RNG, h = 0.15) {
-  const paver = mk(rng.pick(['tile_floor', 'concrete_floor', 'tile_floor'] as const), rng.int(0, 3));
+  const paver = mk('concrete_floor', rng.int(0, 3));
   const curbKey = mk('concrete', rng.int(0, 3));
   const cw = 0.18;
   let cx0 = x0, cx1 = x1, cz0 = z0, cz1 = z1;
@@ -79,8 +79,8 @@ export function roadDressingZ(w: WCtx, x0: number, x1: number, z0: number, z1: n
   const len = z1 - z0;
   for (let i = 0; i < len / 3; i++) {
     const px = rng.range(x0 + 0.5, x1 - 0.5), pz = rng.range(z0 + 1, z1 - 1);
-    const cell = rng.pick([D.CRACKS, D.CRACKS, D.OIL, D.DIRT, D.SAND, D.PAPERS, D.DIRT]);
-    w.decal(cell, new THREE.Vector3(px, 0.012, pz), up, rng.range(1.2, 3.2), rng.range(1.2, 3.2), rng.range(0, 6), 0.004 + i * 0.00005);
+    const cell = rng.pick([D.CRACKS, D.CRACKS, D.OIL, D.DIRT, D.SAND, D.PAPERS, D.CRACKS]);
+    w.decal(cell, new THREE.Vector3(px, 0.012, pz), up, rng.range(1.0, 2.4), rng.range(1.0, 2.4), rng.range(0, 6), 0.004 + i * 0.00005);
   }
   // sand washed against curbs
   for (let z = z0; z < z1; z += rng.range(3, 7)) {
@@ -89,7 +89,7 @@ export function roadDressingZ(w: WCtx, x0: number, x1: number, z0: number, z1: n
   // repair patches
   for (let i = 0; i < len / 12; i++) {
     const px = rng.range(x0 + 1, x1 - 1), pz = rng.range(z0 + 1, z1 - 1);
-    w.b.box(mk('asphalt', 3), px, 0.008, pz, rng.range(0.8, 2.2), 0.02, rng.range(0.8, 2.5), { ry: rng.jit(0.1) });
+    w.b.box(mk('asphalt', 3), px, 0.008, pz, rng.range(0.6, 1.4), 0.02, rng.range(0.6, 1.6), { ry: rng.jit(0.1) });
   }
   // manholes + drains
   for (let z = z0 + rng.range(4, 10); z < z1 - 2; z += rng.range(14, 24)) manhole(w, cx + rng.jit(1.5), z, rng);

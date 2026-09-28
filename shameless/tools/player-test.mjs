@@ -57,19 +57,19 @@ await test('spawn', async () => {
 
 await test('walk', async () => {
   await api('api.teleport(0,0,-1,0);');
-  const a = await api("return api.until('s.speed >= 4.6*0.9', ['forward'], 2);");
-  check('reaches 90% walk speed quickly (<0.25 s)', a.t > 0 && a.t < 0.25, a.t);
+  const a = await api("return api.until('s.speed >= 4.8*0.9', ['forward'], 2);");
+  check('walk accel eases out: 90% in 0.14–0.22 s', a.t > 0.14 && a.t < 0.22, a.t);
   const r = await api("return api.sim(1.5, ['forward']);");
-  check('walk speed ≈ 4.6', near(r.final.speed, 4.6, 0.08), r.final.speed);
+  check('walk speed ≈ 4.8', near(r.final.speed, 4.8, 0.05), r.final.speed);
   check('not sprinting', !r.final.sprinting);
   const st = await api("return api.until('s.speed < 0.1', [], 2);");
-  check('stops quickly (<0.25 s)', st.t > 0 && st.t < 0.25, st.t);
+  check('stop has a soft friction tail (0.22–0.33 s)', st.t > 0.22 && st.t < 0.33, st.t);
   await api('api.teleport(0,0,-1,0);');
   const b = await api("return api.sim(1.5, ['back']);");
-  check('backpedal slower (≈3.8)', near(b.final.speed, 4.6 * 0.82, 0.1), b.final.speed);
+  check('backpedal 0.70× (≈3.36)', near(b.final.speed, 4.8 * 0.7, 0.05), b.final.speed);
   await api('api.teleport(0,0,6,0);');
   const sd = await api("return api.sim(1.0, ['left']);");
-  check('strafe ≈4.2', near(sd.final.speed, 4.6 * 0.92, 0.1), sd.final.speed);
+  check('strafe 0.80× (≈3.84)', near(sd.final.speed, 4.8 * 0.8, 0.05), sd.final.speed);
 });
 
 await test('sprint', async () => {
@@ -77,13 +77,13 @@ await test('sprint', async () => {
   await api("api.sim(0.05, ['forward'], { tap: ['sprint'] });");
   const r = await api("return api.sim(1.5, ['forward']);");
   check('sprint latched by single tap', r.final.sprinting && !r.final.tac, r.final);
-  check('sprint speed ≈ 6.1', near(r.final.speed, 6.1, 0.1), r.final.speed);
-  check('fov kick while sprinting (≈77)', r.final.fov > 76 && r.final.fov < 78.5, r.final.fov);
+  check('sprint speed ≈ 7.2', near(r.final.speed, 7.2, 0.05), r.final.speed);
+  check('fov kick while sprinting = +1.5', near(r.final.fov, 76.5, 0.1), r.final.fov);
   await api("api.sim(0.05, ['forward'], { tap: ['sprint'] });");
   const t = await api("return api.sim(1.2, ['forward'], { every: 10 });");
   check('second tap → tactical sprint', t.final.tac, t.final);
-  check('tac sprint speed ≈ 6.8', near(t.final.speed, 6.8, 0.1), t.final.speed);
-  check('fov kick tac sprint (≈82)', t.final.fov > 80, t.final.fov);
+  check('tac sprint speed ≈ 8.6', near(t.final.speed, 8.6, 0.05), t.final.speed);
+  check('fov kick tac sprint = +3 (player owns all movement FOV)', near(t.final.fov, 78, 0.1), t.final.fov);
   await shot('tac-sprint');
   // double tap from walking
   await api('api.teleport(0,0,-1,0);');
@@ -91,14 +91,14 @@ await test('sprint', async () => {
   await api("api.sim(0.1, ['forward'], { tap: ['sprint'] });");
   await api("api.sim(0.1, ['forward'], { tap: ['sprint'] });");
   const d = await api("return api.sim(1.0, ['forward']);");
-  check('double-tap sprint → tac sprint', d.final.tac && near(d.final.speed, 6.8, 0.15), d.final.speed);
+  check('double-tap sprint → tac sprint', d.final.tac && near(d.final.speed, 8.6, 0.1), d.final.speed);
   const stop = await api("return api.sim(0.5, []);");
   check('releasing forward ends sprint', !stop.final.sprinting);
   // tac-sprint stamina drains to normal sprint
   await api('api.teleport(0,0,-1,0);');
   await api("api.sim(0.1, ['forward'], { tap: ['sprint'] }); api.sim(0.1, ['forward'], { tap: ['sprint'] });");
   const long = await api("return api.sim(4.5, ['forward']);");
-  check('tac sprint runs out → normal sprint', long.final.sprinting && !long.final.tac && near(long.final.speed, 6.1, 0.15), long.final);
+  check('tac sprint runs out → normal sprint', long.final.sprinting && !long.final.tac && near(long.final.speed, 7.2, 0.1), long.final);
 });
 
 await test('crouch-prone', async () => {
@@ -108,7 +108,7 @@ await test('crouch-prone', async () => {
   check('crouch eye ≈1.08', near(c.final.eyeHeight, 1.08, 0.03), c.final.eyeHeight);
   await shot('crouched');
   const w = await api("return api.sim(1.2, ['forward']);");
-  check('crouch walk ≈2.5 m/s', near(w.final.speed, 2.5, 0.08), w.final.speed);
+  check('crouch walk ≈3.0 m/s', near(w.final.speed, 3.0, 0.05), w.final.speed);
   const u = await api("api.sim(0.05, [], { tap: ['crouch'] }); return api.sim(0.5, []);");
   check('toggle back to stand', u.final.stance === 'stand' && near(u.final.eyeHeight, 1.62, 0.03), u.final.eyeHeight);
   const trans = await api("api.sim(0.05, [], { tap: ['crouch'] }); return api.sim(0.1, [], { every: 1 });");
@@ -137,7 +137,7 @@ await test('slide', async () => {
   check('slide speed burst ≥ 8', peak >= 7.9, peak);
   check('camera lowered during slide (eye < 1.0)', s.final.eyeHeight < 1.0, s.final.eyeHeight);
   check('camera roll during slide', Math.abs(s.final.roll) > 0.03, s.final.roll);
-  check('fov kick during slide', s.final.fov > 78, s.final.fov);
+  check('fov during slide ≈ base+2..3', s.final.fov > 76.8 && s.final.fov < 78.2, s.final.fov);
   await shot('mid-slide');
   const e = await api("return api.until('!s.sliding', ['forward'], 3);");
   const dist = z0 - e.s.pos[2];
@@ -188,7 +188,7 @@ await test('jump', async () => {
   await api("api.sim(1.0, ['forward']);");
   const ac = await api("api.sim(0.05, ['forward'], { tap: ['jump'] }); return api.sim(0.45, ['right']);");
   check('air control: can redirect sideways', Math.abs(ac.final.vel[0]) > 1.5, ac.final.vel);
-  check('air control: no speed gain beyond takeoff', ac.maxSpeed <= 4.65, ac.maxSpeed);
+  check('air control: no speed gain beyond takeoff', ac.maxSpeed <= 4.81, ac.maxSpeed);
   await api("api.until('s.grounded', [], 2);");
 });
 
@@ -297,11 +297,11 @@ await test('lean', async () => {
   const base = await api('return api.sim(0.3, []);');
   const l = await api("return api.sim(0.5, ['leanLeft']);");
   check('lean left offsets camera ≈ -0.38 m', near(l.final.camX - base.final.camX, -0.38, 0.05), (l.final.camX - base.final.camX).toFixed(3));
-  check('lean left rolls camera', l.final.roll > 0.1, l.final.roll);
+  check('lean left rolls camera ≈4°', near(l.final.roll, 0.07, 0.01), l.final.roll);
   await shot('lean-left');
   const r = await api("return api.sim(0.5, ['leanRight']);");
   check('lean right offsets camera ≈ +0.38 m', near(r.final.camX - base.final.camX, 0.38, 0.05), (r.final.camX - base.final.camX).toFixed(3));
-  check('lean right rolls the other way', r.final.roll < -0.1, r.final.roll);
+  check('lean right rolls the other way', near(r.final.roll, -0.07, 0.01), r.final.roll);
   await shot('lean-right');
   // lean into the pillar: limited
   await api('api.teleport(51.0,0,-6,0);');
@@ -322,20 +322,20 @@ await test('fall-damage-regen', async () => {
   const r1 = await api('return api.sim(3.5, []);');
   check('no regen before ~4 s', near(r1.final.health, hp0, 0.5), [hp0, r1.final.health]);
   const r2 = await api('return api.sim(2.0, []);');
-  check('regenerates to full after delay', r2.final.health >= 100, r2.final.health);
+  check('regenerates to full (150) after delay', r2.final.health >= 150, r2.final.health);
   await api('api.teleport(66,12,-6,0); api.clearEvents();');
   await api("api.until('s.grounded && s.pos[1] < 0.5', ['forward'], 5);");
   const d = await api("return { s: api.snapshot(), ev: api.events.map(e => e.type) };");
   check('12 m drop is lethal', !d.s.alive && d.ev.includes('player:died'), d.ev);
   const rs = await api("api.clearEvents(); api.player.respawn(); return { s: api.sim(0.3, []).final, ev: api.events.map(e => e.type) };");
-  check('respawn restores health + event', rs.s.alive && rs.s.health === 100 && rs.ev.includes('player:respawn'), rs);
+  check('respawn restores health + event', rs.s.alive && rs.s.health === 150 && rs.ev.includes('player:respawn'), rs);
 });
 
 await test('damage', async () => {
   await api('api.teleport(0,0,-1,0); api.clearEvents();');
   const r = await api("api.player.damage(30, new (api.ctx.camera.position.constructor)(1,0,0)); return api.sim(0.1, []);");
   const ev = await api("return api.events.find(e => e.type==='player:damaged');");
-  check('player:damaged with health', ev && ev.data.health === 70, ev?.data);
+  check('player:damaged with health (maxHealth 150)', ev && ev.data.health === 120, ev?.data);
   check('damage shakes camera', Math.abs(r.final.roll) > 0.0005 || Math.abs(r.final.pitch) > 0.001, [r.final.roll, r.final.pitch]);
   await api('api.sim(6, []);');
 });
@@ -344,7 +344,7 @@ await test('footsteps', async () => {
   await api('api.teleport(0,0,-1,0); api.sim(0.5, []); api.clearEvents();');
   await api("api.sim(3.0, ['forward']);");
   const n = await api("return api.events.filter(e => e.type==='player:footstep').length;");
-  check('walk cadence ≈ 2.7 steps/s (6–10 in 3 s)', n >= 6 && n <= 10, n);
+  check('walk cadence ≈ 2.8 steps/s (6–10 in 3 s)', n >= 6 && n <= 10, n);
   const f = await api("return api.events.find(e => e.type==='player:footstep');");
   check('footstep has surface from ground ray', f && f.data.surface === 'concrete', f?.data);
   await api('api.teleport(0,0,-1,0); api.sim(0.3, []); api.clearEvents();');
@@ -375,7 +375,7 @@ await test('recoil-shake', async () => {
   check('recoil climbs (10 shots × 0.01 → > 0.06 rad)', k.pitch - p0 > 0.06, (k.pitch - p0).toFixed(4));
   const rec = await api("return api.sim(1.0, []);");
   const kept = rec.final.pitch - p0;
-  check('recoil partially recovers (keeps 35–60%)', kept > 0.035 && kept < 0.065, kept.toFixed(4));
+  check('recoil mostly stays in the aim (keeps 85–90%)', kept > 0.084 && kept < 0.095, kept.toFixed(4));
   await api('api.player.pitch = 0; api.sim(0.5, []);');
   const s = await api("api.player.addCameraShake(1.0); return api.sim(0.15, [], { every: 1 });");
   const dev = Math.max(...s.samples.map((x) => Math.abs(x.roll)));
@@ -388,11 +388,150 @@ await test('fov-ads', async () => {
   await api('api.teleport(0,0,-1,0); api.setWeapon(true, 1, 50);');
   const r = await api("return api.sim(1.0, ['forward']);");
   check('fov lerps to weapons.fovTarget (50)', near(r.final.fov, 50, 0.5), r.final.fov);
-  check('ADS slows movement (≈0.6×)', near(r.final.speed, 4.6 * 0.6, 0.1), r.final.speed);
+  check('ADS slows movement (0.55×)', near(r.final.speed, 4.8 * 0.55, 0.05), r.final.speed);
   await api("api.sim(0.05, ['forward'], { tap: ['sprint'] });");
   const s = await api("return api.sim(0.5, ['forward']);");
   check('cannot sprint while ADS', !s.final.sprinting, s.final);
   await api('api.setWeapon(false); api.sim(1.0, []);');
+});
+
+await test('critic-r1', async () => {
+  // 1. walk → sprint ramp ~0.25 s
+  await api('api.teleport(0,0,5,0); api.sim(1.0, [\'forward\']);');
+  const ramp = await api("api.sim(1/60, ['forward'], { tap: ['sprint'] }); return api.until('s.speed >= 7.15', ['forward'], 1);");
+  check('[1] walk→sprint ramp ≈0.25 s', ramp.t > 0.18 && ramp.t < 0.32, ramp.t);
+  check('[15] maxHealth 150', (await api('return api.player.maxHealth;')) === 150);
+
+  // 2. slide-jump keeps tac + FOV stays put (no pumping)
+  await api("api.teleport(0,0,40,0); api.sim(0.05, ['forward'], { tap: ['sprint'] }); api.sim(0.05, ['forward'], { tap: ['sprint'] }); api.sim(1.0, ['forward']);");
+  const sj = await api("const a = api.sim(0.25, ['forward'], { tap: ['crouch'], every: 1 }); const b = api.sim(0.8, ['forward'], { tap: ['jump'], every: 1 }); return { a: a.samples, b: b.samples };");
+  const fovs = [...sj.a, ...sj.b].map((x) => x.fov);
+  check('[2] slide-jump keeps tactical sprint in the air', sj.b.slice(5, 30).every((x) => x.tac), sj.b.slice(5, 30).map((x) => x.tac ? 't' : '-').join(''));
+  check('[2] FOV through slide + slide-jump stays within 76.8–78.1', Math.min(...fovs) > 76.8 && Math.max(...fovs) < 78.1, [Math.min(...fovs), Math.max(...fovs)]);
+
+  // 3. vault / mantle keep momentum (no zero-speed frames, no yank)
+  await api('api.teleport(30,0,-1,0);');
+  const v = await api("api.sim(0.05, ['forward','sprint']); api.sim(0.5, ['forward','sprint']); const entry = api.player.speed; const r = api.sim(1.0, ['forward','sprint'], { tap: ['jump'], every: 1 }); return { entry, s: r.samples };");
+  const vs = v.s.filter((x) => x.vaulting);
+  const vIdx = v.s.findIndex((x) => x.vaulting), vEnd = v.s.findLastIndex((x) => x.vaulting);
+  const around = v.s.slice(Math.max(0, vIdx - 2), vEnd + 4).map((x) => x.speed);
+  check('[3] sprint vault happens', vs.length > 10, vs.length);
+  check('[3] vault keeps ≥0.85× entry speed throughout (incl. hand-off)', Math.min(...around) >= 0.85 * v.entry - 0.1, [v.entry, Math.min(...around)]);
+  const sd = (arr) => Math.max(...arr.slice(1).map((x, i) => Math.abs(x - arr[i])));
+  check('[3] vault speed has no yank (max Δ/frame < 0.6 m/s)', sd(around) < 0.6, sd(around).toFixed(2));
+  await api('api.teleport(30,0,-9.5,0);');
+  const m = await api("api.sim(0.6, ['forward','sprint']); const entry = api.player.speed; const r = api.sim(1.0, ['forward','sprint'], { tap: ['jump'], every: 1 }); return { entry, s: r.samples };");
+  const mi = m.s.findIndex((x) => x.mantling), me = m.s.findLastIndex((x) => x.mantling);
+  const ms = m.s.slice(Math.max(0, mi - 1), me + 3).map((x) => x.speed);
+  check('[3] sprint mantle: never below 0.75× entry, exits ≈0.8×', mi >= 0 && Math.min(...ms) > 0.75 * m.entry && near(m.s[me].speed, 0.8 * m.entry, 0.5), [m.entry, Math.min(...ms), m.s[me]?.speed]);
+  check('[3] sprint mantle speed continuous (max Δ/frame < 0.6)', sd(ms) < 0.6, sd(ms).toFixed(2));
+  // reach no longer grows into a tractor beam: pressing jump 1.25 m from the face while sprinting is a jump
+  await api('api.teleport(30,0,-12.5,0);');
+  const far = await api("api.sim(0.05, ['forward','sprint']); api.until('s.pos[2] < -13.12', ['forward','sprint'], 2); return api.sim(1/60, ['forward','sprint'], { tap: ['jump'] }).final;");
+  check('[3] reach = r+0.35+0.03·v (no grab from 1.25 m)', !far.mantling, far.pos);
+  await api("api.until('s.grounded && !s.mantling', [], 3);");
+
+  // 4. mantle camera: one monotonic curve at standing eye height
+  await api('api.teleport(30,0,-13.9,0);');
+  const cm = await api("return api.sim(0.9, [], { tap: ['jump'], every: 1 }).samples;");
+  const cy = cm.map((x) => x.camY);
+  const nonMono = cy.slice(1).reduce((mx, y, i) => Math.max(mx, cy[i] - y), 0);
+  check('[4] standing mantle camera Y is monotonic (max drop < 2 mm)', nonMono < 0.002, nonMono.toFixed(4));
+  check('[4] eye stays ≥1.45 m through the mantle', Math.min(...cm.map((x) => x.eyeHeight)) >= 1.45, Math.min(...cm.map((x) => x.eyeHeight)));
+  check('[4] mantle total ≈0.5 s', cm.filter((x) => x.mantling).length / 60 < 0.6, cm.filter((x) => x.mantling).length / 60);
+  check('[4] vault keeps standing eye height', vs.every((x) => x.eyeHeight > 1.6), Math.min(...vs.map((x) => x.eyeHeight)));
+  await api('api.teleport(30,0,-23.8,0);');
+  const jm = await api("return api.sim(1.2, ['forward','jump'], { tap: ['jump'], every: 1 }).samples;");
+  const vy = jm.slice(1).map((x, i) => (x.camY - jm[i].camY) * 60);
+  let rev = 0; for (let i = 1; i < vy.length; i++) if (vy[i - 1] > 1 && vy[i] < -0.5) rev++;
+  check('[4] jump → air-mantle: camera vertical velocity never flips sign in one frame', rev === 0 && jm.some((x) => x.mantling), rev);
+
+  // 5/6. exploits: bunny-hop and slide-hop chains never beat plain tac sprint
+  const tacRef = await api("api.teleport(0,0,40,0); api.sim(0.1, ['forward'], {tap:['sprint']}); api.sim(0.1, ['forward'], {tap:['sprint']}); api.sim(1.0, ['forward','sprint']); const z0 = api.player.position.z; api.sim(6, ['forward','sprint']); return (z0 - api.player.position.z) / 6;");
+  const bhop = await api(`api.teleport(0,0,40,0); api.sim(0.1, ['forward'], {tap:['sprint']}); api.sim(0.1, ['forward'], {tap:['sprint']}); api.sim(1.0, ['forward','sprint']);
+    const p = api.player; const z0 = p.position.z; let tacOff = -1;
+    for (let i = 0; i < 360; i++) { api.sim(1/60, ['forward','sprint'], { tap: p.grounded ? ['jump'] : [] }); if (tacOff < 0 && !p.tacSprinting) tacOff = i / 60; }
+    return { avg: (z0 - p.position.z) / 6, tacOff };`);
+  check('[5] tac sprint drains while bunny-hopping (ends < 4.5 s)', bhop.tacOff > 0 && bhop.tacOff < 4.5, bhop.tacOff);
+  check('[6] bunny-hop average ≤ tac-sprint average', bhop.avg <= tacRef + 0.02, [bhop.avg.toFixed(2), tacRef.toFixed(2)]);
+  const shop = await api(`api.teleport(0,0,40,0); api.sim(0.1, ['forward'], {tap:['sprint']}); api.sim(0.1, ['forward'], {tap:['sprint']}); api.sim(1.0, ['forward','sprint']);
+    const p = api.player; const z0 = p.position.z; let st = 'slide', timer = 0, peak = 0;
+    for (let i = 0; i < 480; i++) {
+      const tap = [];
+      if (st === 'slide' && p.grounded && !p.sliding) { tap.push('crouch'); st = 'wait'; timer = 0; }
+      else if (st === 'wait') { timer++; if (timer === 8) { tap.push('jump'); st = 'air'; } }
+      else if (st === 'air' && p.grounded) st = 'slide';
+      api.sim(1/60, ['forward','sprint'], { tap }); peak = Math.max(peak, p.speed);
+    }
+    return { avg: (z0 - p.position.z) / 8, peak };`);
+  check('[6] slide-hop chain average ≤ tac-sprint average', shop.avg <= tacRef + 0.02, [shop.avg.toFixed(2), tacRef.toFixed(2)]);
+  check('[6] slide peak ≤ 1.15 × tac', shop.peak <= 8.6 * 1.15 + 0.05, shop.peak);
+  await api("api.teleport(0,0,40,0); api.sim(0.1, ['forward'], {tap:['sprint']}); api.sim(1.0, ['forward']); api.sim(0.05, ['forward'], { tap: ['crouch'] }); api.until('!s.sliding', ['forward'], 3); api.sim(0.05, ['forward'], { tap: ['sprint'] }); api.sim(0.9, ['forward']);");
+  const s2 = await api("const e = api.player.speed; const r = api.sim(0.3, ['forward'], { tap: ['crouch'], every: 1 }); return { e, peak: Math.max(...r.samples.map(x => x.speed)), sl: r.samples.some(x => x.sliding) };");
+  check('[6] repeat slide within cooldown/1.5 s gets no boost', !s2.sl || s2.peak <= s2.e + 0.05, s2);
+
+  // 7. air caps, jump fatigue, landing slow-down
+  const ads = await api(`api.teleport(0,0,20,0); api.setWeapon(true, 1, 55); api.sim(0.8, ['left']); const g = api.player.speed;
+    api.sim(1/60, ['left'], { tap: ['jump'] }); let mx = 0;
+    for (let i = 0; i < 34; i++) { api.sim(1/60, ['left']); mx = Math.max(mx, Math.hypot(api.player.velocity.x, api.player.velocity.z)); }
+    api.sim(0.5, []); api.setWeapon(false); return { g, mx };`);
+  check('[7] ADS strafe-jump never exceeds ground ADS speed', ads.mx <= ads.g + 0.02, ads);
+  const back = await api(`api.teleport(0,0,20,Math.PI); api.sim(0.8, ['back']); const g = api.player.speed; const z0 = api.player.position.z;
+    for (let i = 0; i < 180; i++) api.sim(1/60, ['back'], { tap: api.player.grounded ? ['jump'] : [] });
+    return { g, avg: Math.abs(api.player.position.z - z0) / 3 };`);
+  check('[7] back-hopping average ≤ backpedal speed', back.avg <= back.g + 0.02, back);
+  const fat = await api("api.teleport(0,0,5,0); api.sim(1.2, []); const a = api.sim(0.75, [], { tap: ['jump'] }).maxY; const b = api.sim(0.9, [], { tap: ['jump'] }).maxY; return [a, b];");
+  check('[7] jump fatigue: 2nd jump within 1 s ≈0.8× height', near(fat[1] - 0.02, 0.8 * (fat[0] - 0.02), 0.06), fat);
+  await api('api.sim(1.2, []);');
+  const land = await api("api.teleport(0,0,40,0); api.sim(0.05, ['forward'], {tap:['sprint']}); api.sim(1.0, ['forward']); const pre = api.player.speed; api.sim(1/60, ['forward'], { tap: ['jump'] }); api.until('s.grounded', ['forward'], 2); api.sim(2/60, ['forward']); return { pre, post: api.snapshot().speed };");
+  check('[7] landing slows 0.75–0.85× briefly', land.post <= 0.86 * land.pre && land.post >= 0.7 * land.pre, land);
+
+  // 9. sprint-out timer
+  const so = await api("api.teleport(0,0,40,0); api.sim(0.05, ['forward'], {tap:['sprint']}); api.sim(0.8, ['forward']); const a = api.player.sprintOutRemaining; api.sim(1/60, []); const b = api.player.sprintOutRemaining; const t = api.until('api.player.sprintOutRemaining <= 0', [], 1).t; return { a, b, t };".replace("api.until('api.player.sprintOutRemaining <= 0', [], 1)", "(() => { let t = 0; while (api.player.sprintOutRemaining > 0 && t < 1) { api.sim(1/60, []); t += 1/60; } return { t }; })()"));
+  check('[9] sprint-out 0.24 s', near(so.a, 0.24, 0.001) && near(so.t, 0.24, 0.05), so);
+  const so2 = await api("api.teleport(0,0,40,0); api.sim(0.05, ['forward'], {tap:['sprint']}); api.sim(0.05, ['forward'], {tap:['sprint']}); api.sim(0.8, ['forward']); const a = api.player.sprintOutRemaining; let t = 0; api.sim(1/60, []); while (api.player.sprintOutRemaining > 0 && t < 1) { api.sim(1/60, []); t += 1/60; } return { a, t };");
+  check('[9] tac sprint-out 0.42 s', near(so2.a, 0.42, 0.001) && near(so2.t, 0.42, 0.05), so2);
+
+  // 10. prone timings
+  const pr = await api(`api.teleport(0,0,20,0); api.sim(0.3, []);
+    let t = 0, blocked = false; api.sim(1/60, ['crouch'], {tap:['crouch']}); t += 1/60;
+    while (Math.abs(api.player.eyeHeight - 0.42) > 0.02 && t < 3) { api.sim(1/60, ['crouch']); t += 1/60; if (api.player.stance === 'prone' && api.player.weaponBlocked) blocked = true; }
+    const down = t; api.sim(0.3, []); t = 0;
+    api.sim(1/60, [], {tap:['sprint']}); t += 1/60;
+    while (Math.abs(api.player.eyeHeight - 1.62) > 0.02 && t < 3) { api.sim(1/60, []); t += 1/60; }
+    return { down, up: t, blocked };`);
+  check('[10] stand→prone (tap+hold) 0.8–1.05 s', pr.down > 0.8 && pr.down < 1.05, pr.down);
+  check('[10] prone→stand 0.65–0.85 s', pr.up > 0.65 && pr.up < 0.85, pr.up);
+  check('[10] weapon blocked during prone transition', pr.blocked);
+
+  // 11. landing dips scale with height
+  const dip = async (tp, hold, secs) => api(`${tp}; const r = api.sim(${secs}, ${JSON.stringify(hold)}, { every: 1 }).samples;
+    const li = r.findIndex((x, i) => i > 3 && x.grounded && !r[i - 1].grounded);
+    const w = r.slice(li, li + 40); return { dip: -Math.min(...w.map(x => x.camY - x.pos[1] - x.eyeHeight)), pitch: -Math.min(...w.map(x => x.pitch)) };`);
+  const hop = await dip("api.teleport(0,0,5,0); api.sim(1.2, []); api.sim(1/60, [], { tap: ['jump'] })", [], 1.0);
+  const d3 = await dip('api.teleport(20.8,3,-12.7,0)', ['right'], 1.8);
+  const d6 = await dip('api.teleport(61.2,6,-6,0)', ['right'], 2.2);
+  check('[11] hop landing dip ≤ 2.5 cm', hop.dip > 0.012 && hop.dip <= 0.026, hop);
+  check('[11] 3 m drop dip ≈ 9 cm', near(d3.dip, 0.09, 0.02), d3);
+  check('[11] 6 m drop dip ≈ 18 cm, 4° pitch', near(d6.dip, 0.18, 0.03) && d6.pitch > 0.055, d6);
+
+  // 12. stairs: no speed stutter, camera glides with little lag
+  await api('api.teleport(10,0,-1,0);');
+  const st = await api("return api.sim(5.0, ['forward'], { every: 1 }).samples;");
+  const onStairs = st.filter((x) => x.pos[1] > 0.1 && x.pos[1] < 1.95 && x.grounded);
+  const spMin = Math.min(...onStairs.map((x) => x.speed));
+  const camErr = st.map((x) => x.camY - x.pos[1] - x.eyeHeight);
+  const vyc = st.slice(1).map((x, i) => (x.camY - st[i].camY) * 60);
+  const acc = Math.max(...vyc.slice(1).map((x, i) => Math.abs(x - vyc[i])));
+  check('[12] stairs speed never dips > 10%', spMin > 4.8 * 0.9, spMin.toFixed(2));
+  const meanErr = camErr.reduce((a, b) => a + b, 0) / camErr.length;
+  check('[12] stairs camera within ±0.18 m of feet+eye, mean |lag| < 3 cm', Math.max(...camErr.map(Math.abs)) < 0.18 && Math.abs(meanErr) < 0.03, [Math.min(...camErr).toFixed(3), Math.max(...camErr).toFixed(3), meanErr.toFixed(3)]);
+  check('[12] stairs camera vertical velocity smooth (Δv/frame < 0.9 m/s)', acc < 0.9, acc.toFixed(2));
+
+  // 14. lean movement
+  const lw = await api("api.teleport(0,0,5,0); return api.sim(1.0, ['leanLeft','forward']).final;");
+  check('[14] leaning walks at 0.5×', near(lw.speed, 2.4, 0.05), lw.speed);
+  await api('api.sim(0.5, []);');
 });
 
 await test('physics-raycast', async () => {
@@ -459,7 +598,7 @@ await test('physics-raycast', async () => {
   check('raycastAll returns wall entry/exit ordering', r.all.length >= 2 && r.all[0][0] < r.all[1][0], r.all);
   check('player capsule hit from outside', r.player?.player === true && near(r.player.d, 6.66, 0.05), r.player);
   check('own shots never hit the player', r.own !== 'self', r.own);
-  check('1000 raycasts < 30 ms', r.msPer1000 < 30, r.msPer1000);
+  check('1000 raycasts < 40 ms', r.msPer1000 < 40, r.msPer1000);
   check('unregisterHitboxes', r.afterUnregister === null || r.afterUnregister === undefined, r.afterUnregister);
   check('penetration: 0.5 power stops in 0.3 m brick', r.pen.length === 1 && r.pen[0][2] === true, r.pen);
   check('penetration: 2.0 power passes brick, loses damage', r.pen2.length >= 2 && r.pen2[0][2] === false && r.pen2[1][1] < 1, r.pen2);

@@ -309,12 +309,15 @@ export function building(w: WCtx, s: BSpec): void {
       const segs = Math.ceil((b - a) / 3.5);
       for (let i = 0; i < segs; i++) {
         const sa = a + ((b - a) * i) / segs, sb = a + ((b - a) * (i + 1)) / segs;
-        const h = rng.range(0.9, 1.7);
+        const h = rng.range(0.7, 1.02);
         w.decal(D.GRIME, fpt(fr, (sa + sb) / 2, h / 2, 0.045), fnorm(fr), sb - sa + 0.02, h, 0, 0.004, rng.chance(0.5));
         if (rng.chance(0.2)) w.decal(D.DAMP, fpt(fr, (sa + sb) / 2, 0.4, 0.045), fnorm(fr), sb - sa, 0.8, 0, 0.006);
       }
+    }
+    const allSpans = solidSpans(fr.uA + 0.2, fr.uB - 0.2, ops[f].filter((o) => o.floor === 0));
+    for (const [a, b] of allSpans) {
       const width = b - a;
-      if (width > 2.2 && rng.chance(0.4)) {
+      if (width > 2.0 && rng.chance(0.5)) {
         const cell = rng.pick([D.GRAFFITI_A, D.GRAFFITI_B, D.STENCIL, D.POSTERS, D.GRAFFITI_B]);
         const sz = cell === D.POSTERS ? rng.range(1.2, 1.6) : rng.range(1.5, Math.min(2.4, width - 0.3));
         const u = rng.range(a + sz / 2 + 0.1, b - sz / 2 - 0.1);
@@ -709,6 +712,23 @@ function dressShop(w: WCtx, fr: FaceFrame, o: Opening, rng: RNG, enter: boolean,
     w.b.add('custom:sign', g, m, 'keep');
     for (const u of [su0 + 0.2, su1 - 0.2]) fbox(w, fr, mk('metal_rusty', 0), u - 0.02, u + 0.02, sy0 + 0.1, sy1 - 0.1, 0, 0.08);
     w.decal(D.RUST, fpt(fr, (su0 + su1) / 2, sy0 - 0.5, 0.0), fnorm(fr), su1 - su0, 1.0, 0, 0.008);
+  }
+  // projecting (perpendicular) sign on the pier beside the shop
+  if (rng.chance(0.3) && o.u0 > fr.uA + 0.6) {
+    const u = o.u0 - 0.3, y0 = level(1) + 0.4, y1 = y0 + rng.range(1.0, 1.5);
+    const idx = signCounter++ % (SIGN_COLS * SIGN_ROWS);
+    for (const side of [-1, 1]) {
+      const g = atlasQuad(y1 - y0 - 0.06, 0.62, signRect(idx));
+      g.rotateZ(Math.PI / 2);
+      const m = faceMatrix(fr, 0);
+      m.multiply(new THREE.Matrix4().makeTranslation(u + side * 0.036, (y0 + y1) / 2, 0.55));
+      m.multiply(new THREE.Matrix4().makeRotationY(side * Math.PI / 2));
+      w.b.add('custom:sign', g, m, 'keep');
+    }
+    const c = fpt(fr, u, (y0 + y1) / 2, 0.55);
+    w.b.box(mk('metal_painted_blue', 1), c.x, c.y, c.z, 0.07, y1 - y0, 0.68, { ry: fr.ry });
+    fbox(w, fr, mk('metal_rusty', 0), u - 0.02, u + 0.02, y1 - 0.05, y1, 0, 0.9);
+    fbox(w, fr, mk('metal_rusty', 0), u - 0.02, u + 0.02, y0, y0 + 0.05, 0, 0.3);
   }
   // awning
   if (rng.chance(0.4)) {

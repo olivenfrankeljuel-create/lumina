@@ -766,7 +766,7 @@ export class PlayerController implements PlayerState {
         const gny = Math.max(0.2, this.groundNormal.y);
         const centre = Math.sqrt(1 - gny * gny) / gny; // |tan| of the surface under the centre
         const extra = Math.sign(slope) * Math.max(0, Math.abs(slope) - centre);
-        this.camRateTarget = clamp(extra, -1.2, 1.2) * hsp;
+        this.camRateTarget = clamp(extra * 0.92, -1.2, 1.2) * hsp;
       }
     }
     if (!this._grounded) this.airPeakY = Math.max(this.airPeakY, this.position.y);
