@@ -30,10 +30,10 @@ export function palm(w: WCtx, x: number, y: number, z: number, rng: RNG, height 
   }
   w.b.colBox(x + lean.x * 0.3, y + height / 2, z + lean.z * 0.3, 0.4, height, 0.4, 'wood');
   // crown
-  const n = rng.int(14, 20);
+  const n = rng.int(20, 26);
   for (let i = 0; i < n; i++) {
     const az = (i / n) * Math.PI * 2 + rng.jit(0.2);
-    const up = rng.range(-0.2, 0.9);
+    const up = i % 3 === 0 ? rng.range(0.7, 1.1) : rng.range(0.0, 0.7);
     frond(w, top, az, up, rng.range(2.6, 3.6), rng, false);
   }
   // dead skirt hanging down
@@ -51,13 +51,13 @@ export function palm(w: WCtx, x: number, y: number, z: number, rng: RNG, height 
 
 function frond(w: WCtx, base: THREE.Vector3, az: number, up: number, len: number, rng: RNG, dead: boolean) {
   const segs = 6;
-  const width = dead ? 0.55 : rng.range(0.9, 1.25);
+  const width = dead ? 0.6 : rng.range(1.2, 1.6);
   const g = new THREE.PlaneGeometry(width, len, 2, segs);
   g.translate(0, len / 2, 0);
   const pos = g.attributes.position as THREE.BufferAttribute;
   const uv = g.attributes.uv as THREE.BufferAttribute;
   const weight = new Float32Array(pos.count);
-  const droop = dead ? 0.1 : rng.range(0.9, 1.6);
+  const droop = dead ? 0.1 : rng.range(0.6, 1.2);
   for (let i = 0; i < pos.count; i++) {
     const t = pos.getY(i) / len;
     const xx = pos.getX(i);

@@ -36,7 +36,7 @@ export interface FXExtras {
 }
 
 /** Dev/test overrides (set before createFX). */
-export const fxOptions = { flipRes: 0 };
+export const fxOptions = { flipRes: 0, muzzleLight: true };
 
 interface Tier {
   mult: number; smoke: number; streaks: number; decals: number; bigDecals: number; debris: number; casings: number;
@@ -434,7 +434,7 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
         const powder = surface === 'plaster' || surface === 'tile';
         const size = powder ? 1.6 : 1.35;
         flashDot(p, 0.06, 4, 3.2, 2.2, 0.03);
-        puff(p, n, look.dust, count(4 * m + 1), size, powder ? 2.8 : 2.3, 1.6, 0.6, powder ? 0.6 : 0.5, 0.06, 4, 5);
+        puff(p, n, look.dust, count(3 * m + 1), size, powder ? 2.4 : 1.9, 1.6, 0.6, powder ? 0.55 : 0.45, 0.06, 4, 5);
         puff(p, jet, look.dust, count(4 * m + 1), 0.75, 0.9, 10, 0.3, 0.7, 0, 8, 4);
         grains(p, n, jet, look.chip, count(18 * m + 5), 8, 0.6, 0.011, 0.75, floorY);
         if (near) debris(chunks, p, n, jet, look.chip, count(7 * m + 2), 0.008, 0.026, 5, 0.75, floorY, 'chunk');
@@ -527,7 +527,7 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
     const L = lod(pos);
     if (!suppressed) {
       const k = enemy ? 0.8 : 1;
-      flashes.trigger(time, pos, 1.0, 0.62, 0.3, sunIntensity * 4.5 * k + 6, enemy ? 6 : 8, 0.05, false);
+      if (fxOptions.muzzleLight) flashes.trigger(time, pos, 1.0, 0.62, 0.3, sunIntensity * 4.5 * k + 6, enemy ? 6 : 8, 0.05, false);
       if (enemy && L > 0) {
         _v.copy(pos).addScaledVector(dir, 0.08);
         flashDot(_v, 0.12, 20, 11, 4, 0.05);
@@ -559,13 +559,12 @@ export async function createFX(ctx: GameContext): Promise<FX & FXExtras> {
 
   function casing(pos: THREE.Vector3, vel: THREE.Vector3, kind: 'rifle' | 'pistol'): void {
     const len = kind === 'rifle' ? 0.045 : 0.019;
-    const rad = kind === 'rifle' ? 0.043 : 0.047; // radius scale relative to lathe (0.105 * s)
+    const rad = kind === 'rifle' ? 0.0048 : 0.0049;
     B.px = pos.x; B.py = pos.y; B.pz = pos.z;
     B.vx = vel.x * range(0.9, 1.1) + range(-0.2, 0.2); B.vy = vel.y * range(0.9, 1.1); B.vz = vel.z * range(0.9, 1.1) + range(-0.2, 0.2);
     B.ax = range(-30, 30); B.ay = range(-8, 8); B.az = range(-30, 30);
-    B.sx = len * rad * 10 * 0.1 * 10; B.sy = len; B.sz = B.sx;
-    // lathe radius 0.105 of unit length: want real radius ~4.8mm (rifle) / 4.9mm (pistol)
-    B.sx = B.sz = (kind === 'rifle' ? 0.0048 : 0.0049) / 0.105;
+    // lathe radius is 0.105 of unit length: real case radius ~4.8mm (5.56) / 4.9mm (9mm)
+    B.sx = B.sz = rad / 0.105;
     B.sy = len;
     _e.set(rand() * 6.28, rand() * 6.28, rand() * 6.28);
     _q.setFromEuler(_e);

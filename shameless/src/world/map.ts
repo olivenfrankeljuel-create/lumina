@@ -157,7 +157,7 @@ export function buildMap(w: WCtx) {
   // ------------------------------------------------------------------ enemy spawns (ground + reachable roofs)
   const roof2 = BASE + 2 * FH;
   const es: [number, number, number][] = [
-    [-2, 0, -62], [10, 0, -61], [-12, 0, -62], [-22, 0.02, -40], [-30, 0, -31], [22.5, 0.02, -40], [33, 0, -30],
+    [-2, 0, -62], [10, 0, -61], [-12, 0, -62], [-22, 0.02, -40], [-36, 0, -30.5], [22.5, 0.02, -40], [33, 0, -30],
     [45, 0.02, -16], [-37, roof2, -6], [13, roof2, 20], [46, roof2, -2], [12, BASE + FH, -18],
   ];
   for (const [x, y, z] of es) w.enemySpawns.push(new THREE.Vector3(x, y, z));

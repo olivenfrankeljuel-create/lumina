@@ -40,7 +40,7 @@ export async function createWorld(ctx: GameContext): Promise<World> {
   cm.set('custom:cloth', new THREE.MeshStandardMaterial({ name: 'world-cloth', map: clothTex, vertexColors: true, side: THREE.DoubleSide, roughness: 0.92, metalness: 0 }));
   cm.set('custom:produce', new THREE.MeshStandardMaterial({ name: 'world-produce', vertexColors: true, roughness: 0.55, metalness: 0 }));
   cm.set('custom:foliage', new THREE.MeshStandardMaterial({ name: 'world-foliage', map: foliageTex, vertexColors: true, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 }));
-  cm.set('custom:far', new THREE.MeshStandardMaterial({ name: 'world-far', map: farTex, roughness: 0.95, metalness: 0 }));
+  cm.set('custom:far', new THREE.MeshStandardMaterial({ name: 'world-far', map: farTex, vertexColors: true, roughness: 0.95, metalness: 0 }));
   cm.set('custom:mountain', new THREE.MeshStandardMaterial({ name: 'world-mountain', color: 0xa99478, roughness: 1, metalness: 0 }));
   w.b.noShadow.add('custom:decal');
   (cm.get('custom:foliage') as THREE.MeshStandardMaterial).shadowSide = THREE.DoubleSide;

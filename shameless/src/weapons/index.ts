@@ -100,7 +100,7 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
       recoilV: 0.0074, recoilH: RIFLE_H, recoilHScale: 0.0034, recoilRand: 0.0011, adsRecoilMul: 0.72,
       vmKick: 1.25, vmRise: 1.1, vmRoll: 0.9,
       adsTime: 0.25, adsFov: baseFov * 0.78,
-      hip: [0.098, -0.108, -0.232, 0.012, 0.035, 0.0],
+      hip: [0.092, -0.132, -0.315, 0.018, 0.055, -0.02],
       sprint: [-0.035, -0.04, 0.03, -0.45, 0.62, 0.40],
       tac: [-0.06, 0.03, 0.045, 0.95, 0.35, 0.95],
       slide: [-0.02, -0.02, 0.01, 0.02, 0.08, 0.32],
@@ -396,10 +396,13 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     const mantle = p.mantling ? Math.sin(Math.PI * clamp(p.mantleProgress ?? 0.5, 0, 1)) : 0;
 
     // --- blends
+    const sprintOut = (p as { sprintOutRemaining?: number }).sprintOutRemaining ?? 0;
     const canAds = reloadT < 0 && switchPhase === 'none' && sprintState === 0;
     const adsTarget = dbg.forceAds !== null ? dbg.forceAds : adsHeld && canAds ? 1 : 0;
     const prevAds = adsLin;
     adsLin = clamp(adsLin + (adsTarget > adsLin ? 1 : -1) * dt / d.adsTime, Math.min(adsTarget, adsLin), Math.max(adsTarget, adsLin));
+    // ADS can't complete while the player is still coming out of a sprint
+    if (sprintOut > 0 && dbg.forceAds === null) adsLin = Math.min(adsLin, 0.35);
     if (dbg.forceAds !== null && stepping === false) adsLin = dbg.forceAds;
     adsE = smootherstep(0, 1, adsLin);
     if ((prevAds < 0.5) !== (adsLin < 0.5)) ctx.events.emit('weapon:ads', { active: adsLin >= 0.5 });
@@ -468,7 +471,7 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     cooldown = Math.max(0, cooldown - dt);
     dryFireCooldown -= dt;
     const blocked = !stepping && !!pext.weaponBlocked && dbg.forceSprint === null && pSprint > 0.5;
-    const busy = reloadT >= 0 || switchPhase !== 'none' || sprintBlend > 0.3 || tacBlend > 0.3 || mantleBlend > 0.2 || blocked || !p.alive;
+    const busy = reloadT >= 0 || switchPhase !== 'none' || sprintBlend > 0.3 || tacBlend > 0.3 || mantleBlend > 0.2 || blocked || !p.alive || (sprintOut > 0 && dbg.forceSprint === null);
     const wantFire = (d.auto && fireMode === 'auto') ? firing : firePressed;
     if (wantFire && !busy) {
       if (inspectT >= 0) inspectT = -1;
@@ -702,7 +705,7 @@ export async function createWeaponSystem(ctx: GameContext): Promise<WeaponSystem
     get reserveAmmo() { return defs[cur].reserve; },
     get adsAmount() { return adsE; },
     get reloading() { return reloadT >= 0; },
-    get fovTarget() { return lerp(baseFov + tacBlend * 4 + sprintBlend * 2, defs[cur].adsFov, adsE); },
+    get fovTarget() { return lerp(baseFov, defs[cur].adsFov, adsE); },
     get spread() { return clamp(spreadAngle / (8 * DEG), 0, 1); },
     update(dt: number) { update(dt); },
     debug,

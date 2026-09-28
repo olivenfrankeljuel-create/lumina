@@ -66,6 +66,27 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
       });
       return [...m.entries()].sort((a, b) => b[1].tris - a[1].tris).map(([k, e]) => `${k}:${e.n}:${Math.round(e.tris / 1000)}k`).join(' ');
     },
+    /** Downward raycasts at every spawn and on a 2 m grid over the playable bounds; returns misses. */
+    selfcheck() {
+      const down = new THREE.Vector3(0, -1, 0);
+      const miss: string[] = [];
+      const probe = (x: number, z: number, tag: string, y0 = 40) => {
+        const h = ctx.physics.raycast(new THREE.Vector3(x, y0, z), down, 80, { ignoreEnemies: true, ignorePlayer: true });
+        if (!h) miss.push(`${tag}(${x.toFixed(1)},${z.toFixed(1)})`);
+        return h;
+      };
+      for (const s of ctx.world.playerSpawns) probe(s.position.x, s.position.z, 'player');
+      for (const s of ctx.world.enemySpawns) {
+        const h = probe(s.x, s.z, 'enemy', s.y + 1.5);
+        if (h && Math.abs(h.point.y - s.y) > 0.3) miss.push(`enemy-height(${s.x},${s.z}) hit ${h.point.y.toFixed(2)} vs ${s.y.toFixed(2)}`);
+      }
+      const b = (ctx.world as unknown as { bounds: { x0: number; x1: number; z0: number; z1: number } }).bounds;
+      let n = 0;
+      for (let x = b.x0 + 0.5; x < b.x1; x += 2) for (let z = b.z0 + 0.5; z < b.z1; z += 2) { probe(x, z, 'grid'); n++; }
+      const res = { probes: n, misses: miss.length, list: miss.slice(0, 40), staticColliders: (ctx.physics as unknown as { staticCount?: number }).staticCount };
+      console.info('[world selfcheck]', JSON.stringify(res));
+      return res;
+    },
     stats() { return { ...last, world: (ctx.world as unknown as { stats: unknown }).stats, geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length }; },
   };
   window.__shameless.api = api as unknown as Record<string, unknown>;
@@ -74,6 +95,7 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   let budget = params.has('live') ? Infinity : BUDGET;
   const q = params.get('shotname');
   api.shot(q ?? 'street');
+  api.selfcheck();
   let lastT = performance.now();
   const px = new Uint8Array(4);
   // Frames are rendered only while budget > 0; the frame counter advances only on idle frames so the

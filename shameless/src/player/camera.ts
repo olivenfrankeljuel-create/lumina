@@ -73,8 +73,8 @@ export interface CameraInputs {
  * trauma shake, lean offset/roll, slide roll, FOV kicks.
  */
 export class CameraRig {
-  readonly landY = new Spring(11, 0.5);
-  readonly landPitch = new Spring(10, 0.55);
+  readonly landY = new Spring(11, 0.75);
+  readonly landPitch = new Spring(10, 0.75);
   readonly punchPitch = new Spring(14, 0.45);
   readonly punchYaw = new Spring(14, 0.45);
   readonly punchRoll = new Spring(12, 0.45);
@@ -111,12 +111,17 @@ export class CameraRig {
   }
 
   /** Landing: impact speed m/s. */
-  land(impact: number): void {
-    // impulses in m/s and rad/s: peak dip ≈ 0.6·v/ω → ~2 cm for a hop, ~12 cm for a hard fall
-    const k = Math.min(1, Math.max(0, (impact - 2) / 11));
-    const soft = impact > 2 ? 1 : impact / 2;
-    this.landY.impulse(-(0.35 + 1.9 * k) * soft);
-    this.landPitch.impulse(-(0.12 + 0.75 * k) * soft);
+  /**
+   * Landing: dip scales with fall height (hop ≈ 2.4 cm, 3 m ≈ 9 cm, 6 m ≈ 18 cm); hard landings add a
+   * 4° pitch kick and a roll. Springs have ζ = 0.75, peak ≈ 0.44·v/ω.
+   */
+  land(fallHeight: number, hard: boolean): void {
+    const h = Math.max(0, fallHeight);
+    const dip = Math.min(0.25, 0.025 * Math.min(h, 1) + 0.0325 * Math.max(0, h - 1));
+    const pitch = hard ? 0.07 : 0.004 + 0.006 * Math.min(h, 3) / 3;
+    this.landY.impulse(-dip * this.landY.omega / 0.37);
+    this.landPitch.impulse(-pitch * this.landPitch.omega / 0.44);
+    if (hard) this.punchRoll.impulse((Math.random() < 0.5 ? -1 : 1) * 0.03 * this.punchRoll.omega / 0.57);
   }
 
   jump(): void {

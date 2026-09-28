@@ -571,7 +571,7 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
     squeeze: 0.25,
   };
   const leftGrip = {
-    wrist: gripWrist(V(-0.030, -0.042, -0.315), V(0.93, 0.2, -0.3), V(-0.42, -0.9, 0.0)),
+    wrist: gripWrist(V(-0.045, -0.042, -0.315), V(0.9, -0.2, -0.35), V(-0.42, -0.9, 0.0)),
     sdf: hgSdf,
     index: null,
     thumb: null,
@@ -584,7 +584,7 @@ export function buildRifle(mats: GunMaterials): WeaponModel {
   const model: WeaponModel = {
     id: 'm4', kind: 'rifle', root, muzzle, eject,
     sightPoint: new THREE.Vector3(0, RAIL_TOP + WIN_CY, -0.068),
-    eyeRelief: 0.105,
+    eyeRelief: 0.088,
     lens: lensFrame, reticle,
     bolt, boltTravel: 0.058,
     mag, magSeat, magNew, magHandle,

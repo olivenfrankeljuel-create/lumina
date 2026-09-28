@@ -818,7 +818,7 @@ function damagePatch(w: WCtx, fr: FaceFrame, rng: RNG, ops: Opening[], roofY: nu
     if (!(u > 0) || !(y > 0)) return;
     if (ops.some((o) => u + rx > o.u0 - 0.25 && u - rx < o.u1 + 0.25 && y + ry > o.y0 - 0.3 && y - ry < o.y1 + 0.3)) continue;
     const r = () => rng.next();
-    const inner = blobPoints(u, y, rx, ry, r, 14, 0.45);
+    const inner = blobPoints(u, y, rx, ry, r, 26, 0.5);
     const outer = inner.map((p) => new THREE.Vector2(u + (p.x - u) * 1.12 + rng.jit(0.03), y + (p.y - y) * 1.14 + rng.jit(0.03)));
     const patch = new THREE.ShapeGeometry(new THREE.Shape(inner));
     w.b.add(patchKey, patch, faceMatrix(fr, 0.006));

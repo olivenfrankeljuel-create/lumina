@@ -11,6 +11,7 @@ import { createFX } from '../../fx';
 import { simplifierReady } from '../../ai/sdf';
 import { PRESET_VARIANTS, characterCacheStats, buildStats } from '../../ai/character';
 import { SoldierVisual } from '../../ai/soldier';
+import { createEnemyManager, setAiLogging, type EnemyManagerExt } from '../../ai';
 
 /**
  * AI / character dev scene.
@@ -23,7 +24,14 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   window.__shameless.ctx = ctx;
   await simplifierReady;
   const t0 = performance.now();
-  const chars = (params.has('nochars') ? [] : PRESET_VARIANTS).map((v, i) => {
+  const mode = params.get('mode') ?? 'lineup';
+  let mgr: EnemyManagerExt | null = null;
+  if (mode !== 'lineup') {
+    setAiLogging(true);
+    mgr = await createEnemyManager(ctx, { count: 0 });
+    ctx.enemies = mgr;
+  }
+  const chars = (params.has('nochars') || mode !== 'lineup' ? [] : PRESET_VARIANTS).map((v, i) => {
     const c = new SoldierVisual(ctx, v, i % 2 === 1);
     c.root.position.set((i - 1.5) * 1.1, 0, -4);
     ctx.scene.add(c.root);
@@ -52,6 +60,25 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
     chars,
     lineup(mode: string, yaw = 0) { lineup.mode = mode; lineup.yaw = yaw; chars.forEach((c) => (c.anim.frozen = false)); },
     freeze(on = true) { chars.forEach((c) => (c.anim.frozen = on)); },
+    mgr: () => mgr,
+    log: (n = 60) => mgr?.debug.log.slice(-n),
+    /** Spawn N enemies at the courtyard spawns and let them fight (player stands still at origin). */
+    combat(n = 4) {
+      const sp = ctx.world.enemySpawns;
+      for (let i = 0; i < n; i++) mgr!.debug.spawn(sp[i % sp.length].clone(), PRESET_VARIANTS[i % 4]);
+    },
+    /** One passive enemy in front of the camera; kill it after `frames` frames with a shot from `dir`. */
+    ragdoll(frames = 5, x = 0, z = -4) {
+      mgr!.debug.setPassive(true);
+      const e = mgr!.debug.spawn(new THREE.Vector3(x, 0, z), PRESET_VARIANTS[0], 0);
+      e.vis.anim.aim = 1;
+      let f = 0;
+      const tick = () => { if (++f >= frames) mgr!.debug.kill(e.id, new THREE.Vector3(0.3, 0.1, -1)); else requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+      return e.id;
+    },
+    /** Frame-accurate wait (works with slow software rendering). */
+    async frames(n: number) { const t = window.__shameless.frame + n; while (window.__shameless.frame < t) await new Promise((r) => setTimeout(r, 30)); },
     phase(p: number) { chars.forEach((c, i) => (c.anim.phase = (p + i * 0.13) % 1)); },
   };
   window.__shameless.api = api as unknown as Record<string, unknown>;
@@ -60,7 +87,8 @@ export default async function (container: HTMLElement, uiRoot: HTMLElement) {
   let last = performance.now();
   const loop = (now: number) => {
     requestAnimationFrame(loop);
-    const dt = window.__shameless.fixedDt ?? Math.min(0.05, (now - last) / 1000);
+    const dt = window.__shameless.fixedDt ?? Math.max(0, Math.min(0.05, (now - last) / 1000));
+    (window as unknown as { __aiDt: number[] }).__aiDt = [...((window as unknown as { __aiDt?: number[] }).__aiDt ?? []).slice(-5), now - last];
     last = now;
     const tt = performance.now();
     poseLineup();

@@ -481,8 +481,8 @@ export class GradeEffect extends Effect {
         float r = length(d);
         float vig = 1.0 - vignette * smoothstep(0.35, 1.05, r) - ads * 0.18 * smoothstep(0.25, 0.9, r);
         g *= vig;
-        float edge = smoothstep(0.25, 0.95, r + damage * 0.2);
-        g = mix(g, g * vec3(0.9, 0.18, 0.12) + vec3(0.32, 0.0, 0.0), damage * edge * 0.85);
+        float edge = smoothstep(0.42, 1.05, r) * (0.55 + 0.45 * damage);
+        g = mix(g, g * vec3(0.85, 0.16, 0.1) + vec3(0.26, 0.0, 0.0), clamp(damage * edge * 1.15, 0.0, 0.9));
         g = mix(g, vec3(1.0), clamp(flash, 0.0, 1.0) * 0.85);
         outputColor = vec4(pow(clamp(g, 0.0, 1.0), vec3(2.2)), inputColor.a);
       }`, {
@@ -520,7 +520,7 @@ export class FinalEffect extends Effect {
           col.b = texture2D(inputBuffer, uv + off).b;
         }
         if (edgeBlur > 0.001) {
-          float e = smoothstep(0.08, 0.5, r2) * edgeBlur;
+          float e = smoothstep(0.18, 0.6, r2) * edgeBlur;
           if (e > 0.02) {
             vec3 acc = col; float rad = e * 6.0;
             for (int i = 0; i < 8; i++) {

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { WCtx } from './context';
 import { RNG, fbm } from './rng';
 import { mk } from './builder';
+import { paint } from './geo';
 
 /**
  * Distant city silhouette (low-detail blocks with window texture, domes, minarets, towers)
@@ -18,7 +19,7 @@ export function horizon(w: WCtx, rng: RNG) {
     const r = rng.range(98, 280);
     const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
     const bw = rng.range(8, 22), bd = rng.range(8, 20);
-    const h = rng.range(5, 16) * (r < 140 ? 1 : 0.9) + (rng.chance(0.08) ? rng.range(8, 20) : 0);
+    const h = rng.range(5, 13) * (r < 140 ? 1 : 0.85) + (rng.chance(0.04) ? rng.range(6, 14) : 0);
     blocks.push([x, z, h]);
     farBox(w, far, x, h / 2, z, bw, h, bd, rng.range(0, Math.PI));
     // parapet + roof clutter silhouettes
@@ -70,9 +71,9 @@ export function horizon(w: WCtx, rng: RNG) {
     }
     for (let k = 0; k < 4; k++) farBox(w, far, x, 30 + k * 7, z, 1.2, 1.4, 1.2, k);
   }
-  for (let i = 0; i < 5; i++) {
-    const a = rng.range(0, Math.PI * 2), r = rng.range(170, 260);
-    const h = rng.range(26, 45);
+  for (let i = 0; i < 3; i++) {
+    const a = rng.range(0, Math.PI * 2), r = rng.range(190, 260);
+    const h = rng.range(22, 34);
     farBox(w, far, cx + Math.cos(a) * r, h / 2, cz + Math.sin(a) * r, rng.range(14, 22), h, rng.range(14, 22), a);
   }
   // Mountains
@@ -117,5 +118,8 @@ function farBox(w: WCtx, key: string, x: number, y: number, z: number, sx: numbe
     const su = nx > 0.5 ? sz : sx, sv = ny > 0.5 ? sz : sy;
     uv.setXY(i, (uv.getX(i) * su) / 8, (uv.getY(i) * sv) / 8);
   }
+  paint(g, FAR_COLS[Math.floor(Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453)) % FAR_COLS.length]);
   w.b.addT(key, g, x, y, z, ry, 0, 0, 1, 1, 1, 'keep');
 }
+
+const FAR_COLS = [0xd8c8a8, 0xc4ae8c, 0xb09a7c, 0xe2d6c0, 0xa89880, 0xc8b89c, 0x9c8c78, 0xd0b894].map((c) => new THREE.Color(c));

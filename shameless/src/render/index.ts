@@ -310,7 +310,7 @@ export async function createRenderPipeline(ctx: GameContext): Promise<RenderPipe
       grade.u('ads').value = ads;
       vmPass.uniforms.dof.value = ads;
       finalFx.u('ca').value = (tier >= 1 ? 0.004 : 0) + damage * 0.02 + flashAmt * 0.01;
-      finalFx.u('edgeBlur').value = Math.max(damage * 0.9, ads * 0.35);
+      finalFx.u('edgeBlur').value = Math.max(damage * 0.8, ads * 0.12);
       finalFx.u('seed').value = (time * 60) % 1000;
       composer.render(dt);
     },

@@ -228,7 +228,7 @@ export function makeDecalAtlas(): THREE.CanvasTexture {
   {
     const [ox, oy] = at(D.CRACKS);
     g.save();
-    g.strokeStyle = 'rgba(25,20,16,0.9)';
+    g.strokeStyle = 'rgba(30,26,22,0.55)';
     g.lineCap = 'round';
     const crack = (x: number, y: number, a: number, len: number, w: number, depth: number) => {
       g.lineWidth = w;
@@ -241,7 +241,7 @@ export function makeDecalAtlas(): THREE.CanvasTexture {
       }
       g.stroke();
     };
-    for (let i = 0; i < 4; i++) crack(ox + C / 2, oy + C / 2, (i / 4) * Math.PI * 2 + rng.jit(0.4), 26, 4, 0);
+    for (let i = 0; i < 4; i++) crack(ox + C / 2, oy + C / 2, (i / 4) * Math.PI * 2 + rng.jit(0.4), 26, 2.2, 0);
     g.restore();
   }
   // BULLETS: cluster of impacts.
@@ -274,9 +274,10 @@ export function makeDecalAtlas(): THREE.CanvasTexture {
     paintCell(g, ox, oy, C, C, (u, v) => {
       const d = Math.hypot(u - 0.5, v - 0.5) * 2;
       const n = fbm(u * 5, v * 5, 41, 5);
-      const a = smooth(1, 0.3, d + (n - 0.5) * 1.0) * (0.55 + 0.45 * fbm(u * 50, v * 50, 4, 3));
+      const m = fbm(u * 14, v * 14, 4, 4);
+      const a = smooth(1, 0.3, d + (n - 0.5) * 1.0) * smooth(0.3, 0.7, m);
       const t = fbm(u * 20, v * 20, 8, 3);
-      return [110 + t * 40, 88 + t * 30, 62 + t * 20, a * 225];
+      return [118 + t * 40, 96 + t * 30, 68 + t * 20, a * 170];
     });
   }
   // LINE: worn road paint
@@ -497,11 +498,15 @@ export function makeFarFacadeTexture(): THREE.CanvasTexture {
     const n = fbm(u * 6, v * 6, 13, 4);
     return [180 + n * 40, 165 + n * 35, 135 + n * 30, 255];
   });
-  for (let fy = 0; fy < 8; fy++) {
-    for (let fx = 0; fx < 8; fx++) {
-      if (rng.chance(0.2)) continue;
-      g.fillStyle = rng.chance(0.3) ? '#3a3530' : '#5b544a';
-      g.fillRect(fx * 32 + 9, fy * 32 + 10, 13, 15);
+  for (let fy = 0; fy < 2; fy++) {
+    g.fillStyle = 'rgba(120,110,95,0.5)';
+    g.fillRect(0, fy * 128 + 118, 256, 6);
+    for (let fx = 0; fx < 3; fx++) {
+      if (rng.chance(0.15)) continue;
+      g.fillStyle = rng.chance(0.4) ? '#4a4136' : '#6a5f50';
+      g.fillRect(fx * 85 + 28, fy * 128 + 40, 30, 46);
+      g.fillStyle = 'rgba(210,200,180,0.8)';
+      g.fillRect(fx * 85 + 24, fy * 128 + 86, 38, 5);
     }
   }
   const t = tex(cv);

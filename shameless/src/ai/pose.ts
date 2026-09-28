@@ -169,7 +169,7 @@ export class Animator {
    * @param ground world ground height query
    */
   update(dt: number, root: THREE.Object3D, scale: number, vel: THREE.Vector3, ground: (x: number, z: number) => number | null) {
-    if (this.frozen) dt = 0;
+    dt = this.frozen || !(dt > 0) ? 0 : Math.min(dt, 0.1);
     this.time += dt;
     this.breath += dt;
     const invRoot = _q2.copy(root.quaternion).invert();

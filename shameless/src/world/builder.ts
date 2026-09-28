@@ -180,7 +180,7 @@ export class Builder {
   }
 
   /** Merge all batches into meshes. Large batches are split into spatial chunks for frustum culling. */
-  build(chunkSize = 44, chunkTriThreshold = 12000): THREE.Group {
+  build(chunkSize = 64, chunkTriThreshold = 30000): THREE.Group {
     const group = new THREE.Group();
     group.name = 'world-static';
     for (const [key, pieces] of this.batches) {
@@ -217,7 +217,7 @@ export class Builder {
     const group = new THREE.Group();
     group.name = 'world-colliders';
     const geoCache = new Map<string, THREE.BoxGeometry>();
-    for (const b of this.colBoxes) {
+    for (const b of mergeColBoxes(this.colBoxes)) {
       const k = `${b.s.x.toFixed(3)},${b.s.y.toFixed(3)},${b.s.z.toFixed(3)}`;
       let geo = geoCache.get(k);
       if (!geo) geoCache.set(k, (geo = new THREE.BoxGeometry(b.s.x, b.s.y, b.s.z)));
@@ -267,4 +267,62 @@ function mergePieces(list: Piece[]): THREE.BufferGeometry {
   g.computeBoundingBox();
   g.computeBoundingSphere();
   return g;
+}
+
+/**
+ * Greedy merge of axis-aligned collision boxes (identity or quarter-turn yaw) that share an exact
+ * cross-section and touch/overlap along one axis. Cuts the collider count several-fold (wall piers,
+ * floor slabs and stacked bands collapse into long cuboids). Rotated boxes pass through unchanged.
+ */
+function mergeColBoxes(boxes: ColBox[]): ColBox[] {
+  type A = { min: number[]; max: number[]; surface: Surface };
+  const aabbs: A[] = [];
+  const out: ColBox[] = [];
+  const e = new THREE.Euler();
+  for (const b of boxes) {
+    e.setFromQuaternion(b.q, 'YXZ');
+    const qy = e.y / (Math.PI / 2);
+    const aligned = Math.abs(e.x) < 1e-4 && Math.abs(e.z) < 1e-4 && Math.abs(qy - Math.round(qy)) < 1e-4;
+    if (!aligned) { out.push(b); continue; }
+    const swap = Math.abs(Math.round(qy)) % 2 === 1;
+    const sx = swap ? b.s.z : b.s.x, sz = swap ? b.s.x : b.s.z;
+    aabbs.push({ min: [b.c.x - sx / 2, b.c.y - b.s.y / 2, b.c.z - sz / 2], max: [b.c.x + sx / 2, b.c.y + b.s.y / 2, b.c.z + sz / 2], surface: b.surface });
+  }
+  const r = (v: number) => Math.round(v * 500);
+  let list = aabbs;
+  for (let pass = 0; pass < 2; pass++) {
+    for (const axis of [0, 2, 1]) {
+      const o1 = (axis + 1) % 3, o2 = (axis + 2) % 3;
+      const groups = new Map<string, A[]>();
+      for (const a of list) {
+        const k = `${a.surface}|${r(a.min[o1])}|${r(a.max[o1])}|${r(a.min[o2])}|${r(a.max[o2])}`;
+        let g = groups.get(k);
+        if (!g) groups.set(k, (g = []));
+        g.push(a);
+      }
+      const next: A[] = [];
+      for (const g of groups.values()) {
+        g.sort((p, q) => p.min[axis] - q.min[axis]);
+        let cur = g[0];
+        for (let i = 1; i < g.length; i++) {
+          const a = g[i];
+          if (a.min[axis] <= cur.max[axis] + 0.002) {
+            cur = { min: cur.min.slice(), max: cur.max.slice(), surface: cur.surface };
+            cur.max[axis] = Math.max(cur.max[axis], a.max[axis]);
+          } else { next.push(cur); cur = a; }
+        }
+        next.push(cur);
+      }
+      list = next;
+    }
+  }
+  for (const a of list) {
+    out.push({
+      c: new THREE.Vector3((a.min[0] + a.max[0]) / 2, (a.min[1] + a.max[1]) / 2, (a.min[2] + a.max[2]) / 2),
+      s: new THREE.Vector3(a.max[0] - a.min[0], a.max[1] - a.min[1], a.max[2] - a.min[2]),
+      q: new THREE.Quaternion(),
+      surface: a.surface,
+    });
+  }
+  return out;
 }

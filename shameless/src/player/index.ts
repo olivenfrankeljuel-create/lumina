@@ -6,7 +6,7 @@ import type { Action } from '../core/Input';
 import { physicsExt, GROUPS, type ShamelessPhysics } from '../physics';
 import { TUNING, type Tuning } from './tuning';
 import { CameraRig, damp } from './camera';
-import { planMantle, evalMantle, mantleDebug, type MantlePlan, type WorldQueries } from './mantle';
+import { planMantle, evalMantle, mantleExitVy, type MantlePlan, type WorldQueries } from './mantle';
 
 export { mantleDebug } from './mantle';
 
@@ -15,7 +15,6 @@ export type { Tuning } from './tuning';
 
 export type Stance = 'stand' | 'crouch' | 'prone';
 
-const UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _aim = new THREE.Vector2();
@@ -71,7 +70,28 @@ export class PlayerController implements PlayerState {
   private takeoffSpeed = 0;
   private crouchHeldTime = -1;
   private crouchPronePending = false;
-  private mantle: { plan: MantlePlan; t: number; wasSprinting: boolean; entrySpeed: number } | null = null;
+  private mantle: { plan: MantlePlan; t: number; wasSprinting: boolean; wasTac: boolean } | null = null;
+  private sprintOut = 0;
+  private slideWasSprint = false;
+  private slideWasTac = false;
+  private lastSlideEnd = -10;
+  private slideDurMul = 1;
+  private lastJumpTime = -10;
+  private landSlowTimer = 0;
+  private landSlowMul = 1;
+  /** Stance height animation (smoothstep from → to over dur). */
+  private hAnim = { from: 1.8, to: 1.8, t: 0, dur: 0 };
+  /** Camera feet-height follower (critically damped, velocity feed-forward). */
+  private camY = 0;
+  private camE = 0;
+  private camEV = 0;
+  private camRate = 0;
+  private camRateTarget = 0;
+  private camReset = true;
+  /** Vertical step discontinuity measured this frame (fed to the camera follower). */
+  private stepExcess = 0;
+  private airPeakY = 0;
+  private blockedFrames = 0;
   private airMantleCheck = 0;
   private _stridePhase = 0;
   private lastFootIndex = 0;
@@ -81,7 +101,6 @@ export class PlayerController implements PlayerState {
   private _slideBlend = 0;
   private _crouchBlend = 0;
   private _speed = 0;
-  private stepOffset = 0;
   private _lastLandImpact = 0;
   private _landTime = -10;
   private groundNormal = new THREE.Vector3(0, 1, 0);
@@ -218,7 +237,14 @@ export class PlayerController implements PlayerState {
   /** Local move input (-1..1): x = strafe, y = forward. */
   get moveInput(): THREE.Vector2 { return new THREE.Vector2(this.wishS, this.wishF); }
   /** True while the weapon shouldn't fire (sprinting, tac sprint, mantling, dead). */
-  get weaponBlocked(): boolean { return !this._alive || this.mantle !== null || this._sprintBlend > 0.5; }
+  get weaponBlocked(): boolean { return !this._alive || this.mantle !== null || this._sprinting || this.sprintOut > 0 || this.proneTransition; }
+  /** Seconds until the weapon may fire after leaving sprint (0.24 s) / tactical sprint (0.42 s); full value while sprinting. */
+  get sprintOutRemaining(): number { return this._sprinting ? (this._tac ? this.tuning.tacSprintOutTime : this.tuning.sprintOutTime) : this.sprintOut; }
+  /** True while going into / out of prone (weapon unavailable). */
+  get proneTransition(): boolean {
+    const a = this.hAnim, pr = this.tuning.heightProne + 0.05;
+    return a.t < a.dur && (a.from <= pr || a.to <= pr);
+  }
   /** 0..1 damage recency (1 right after being hit, fades over ~1 s). */
   get hurtBlend(): number { return clamp(1 - (this.time - this.lastDamageTime), 0, 1); }
   /** Health regen active. */
@@ -230,7 +256,10 @@ export class PlayerController implements PlayerState {
   /** Spring-based view punch (radians/s impulses), e.g. melee, flinch. */
   addViewPunch(pitch: number, yaw: number, roll = 0): void { this.rig.punch(pitch, yaw, roll); }
   /** Stop sprinting (weapons call this when firing/ADS begins). */
-  cancelSprint(): void { this.sprintLatch = false; this._sprinting = false; this._tac = false; }
+  cancelSprint(): void {
+    if (this._sprinting) this.sprintOut = this._tac ? this.tuning.tacSprintOutTime : this.tuning.sprintOutTime;
+    this.sprintLatch = false; this._sprinting = false; this._tac = false;
+  }
 
   damage(amount: number, fromDir: THREE.Vector3 | null): void {
     if (!this._alive || amount <= 0) return;
@@ -276,8 +305,10 @@ export class PlayerController implements PlayerState {
     this.yaw = yaw; this.pitch = pitch;
     this._stance = 'stand'; this.height = T.heightStand; this.eye = T.eyeStand;
     this._sliding = false; this.mantle = null; this._sprinting = this._tac = this.sprintLatch = false;
-    this._lean = 0; this.stepOffset = 0; this.airTime = 0; this.deathTime = 0;
-    this._grounded = false; this.tacMeter = 1;
+    this._lean = 0; this.airTime = 0; this.deathTime = 0;
+    this._grounded = false; this.tacMeter = 1; this.sprintOut = 0; this.landSlowTimer = 0;
+    this.hAnim = { from: T.heightStand, to: T.heightStand, t: 0, dur: 0 };
+    this.camReset = true;
     this.collider.setHalfHeight(this.halfHeightFor(this.height));
     this.syncCollider();
     this.rig.reset();
@@ -370,7 +401,7 @@ export class PlayerController implements PlayerState {
     const vh = _v.set(this.velocity.x, 0, this.velocity.z);
     if (this._sliding) this.updateSlideVelocity(dt, vh, hasWish);
     else if (this._grounded) this.groundAccelerate(dt, vh, hasWish, ads);
-    else this.airAccelerate(dt, vh, hasWish);
+    else this.airAccelerate(dt, vh, hasWish, ads);
     this.velocity.x = vh.x; this.velocity.z = vh.z;
     if (this._grounded && this.velocity.y <= 0) this.velocity.y = -2;
     else this.velocity.y = Math.max(-T.maxFallSpeed, this.velocity.y - T.gravity * dt);
@@ -438,9 +469,11 @@ export class PlayerController implements PlayerState {
     const T = this.tuning;
     if (pressed('sprint')) {
       if (this._sliding) {
-        // slide cancel into sprint
+        // slide cancel into sprint (keeps tactical sprint if the slide came from it)
+        const wasTac = this.slideWasTac;
         this.endSlide('stand');
         this.sprintLatch = true;
+        this._tac = wasTac && this.tacMeter > 0;
       } else {
         if (this._stance !== 'stand') this.setStance('stand');
         const dbl = this.time - this.lastSprintPress < T.doubleTapWindow;
@@ -454,17 +487,29 @@ export class PlayerController implements PlayerState {
     const forwardEnough = this.wishF > 0;
     if (!forwardEnough) this.sprintLatch = false;
     const canSprint = this.sprintLatch && forwardEnough && this._stance === 'stand' && !this._sliding && this._alive;
+    const wasSprinting = this._sprinting, wasTac = this._tac;
     if (this._grounded || !canSprint) this._sprinting = canSprint;
     if (!this._sprinting) this._tac = false;
-    // tactical sprint stamina
-    if (this._tac && this._grounded) {
+    // tactical sprint stamina: drains on the ground and in the air; no recharge while sprinting
+    if (this._tac) {
       this.tacMeter -= dt / T.tacSprintDuration;
       this.tacIdle = 0;
       if (this.tacMeter <= 0) { this.tacMeter = 0; this._tac = false; }
-    } else if (!this._tac) {
+    } else if (this._sprinting) {
+      this.tacIdle = 0;
+    } else {
       this.tacIdle += dt;
       if (this.tacIdle > T.tacSprintRechargeDelay) this.tacMeter = Math.min(1, this.tacMeter + dt / T.tacSprintRechargeTime);
     }
+    this.updateSprintOut(dt, wasSprinting, wasTac);
+  }
+
+  /** Sprint-out timer: the weapon comes up 0.24 s after sprint, 0.42 s after tactical sprint. */
+  private updateSprintOut(dt: number, wasSprinting: boolean, wasTac: boolean): void {
+    const T = this.tuning;
+    if (this._sprinting) this.sprintOut = this._tac ? T.tacSprintOutTime : T.sprintOutTime;
+    else if (wasSprinting) this.sprintOut = wasTac ? T.tacSprintOutTime : T.sprintOutTime;
+    else this.sprintOut = Math.max(0, this.sprintOut - dt);
   }
 
   private targetSpeed(ads: number): number {
@@ -482,30 +527,51 @@ export class PlayerController implements PlayerState {
       s *= dirMul;
     }
     s *= THREE.MathUtils.lerp(1, T.adsMul, clamp(ads, 0, 1)) * this.moveSpeedScale;
+    s *= THREE.MathUtils.lerp(1, T.leanMoveMul, Math.abs(this._lean));
     return s;
   }
 
+  /**
+   * Ground movement: the velocity component along the wish direction ramps toward the target speed
+   * (eased: 90 % of walk in ~0.18 s, then a 9 m/s² ramp into sprint/tac), sideways velocity is removed
+   * quickly (turning follows the view), and stopping uses friction with a soft tail (~0.28 s from walk).
+   */
   private groundAccelerate(dt: number, vh: THREE.Vector3, hasWish: boolean, ads: number): void {
     const T = this.tuning;
-    const cur = vh.length();
-    if (hasWish) {
-      const tgt = _v2.copy(this.wishDir).multiplyScalar(this.targetSpeed(ads));
-      const tlen = tgt.length();
-      const speedingUp = tlen >= cur - 0.05;
-      const rate = speedingUp ? (cur < T.walkSpeed ? T.groundAccel : T.sprintAccel) : T.groundDecel * 0.6;
-      moveTowards(vh, tgt, rate * dt);
-    } else {
-      const d = T.groundDecel * dt;
-      if (cur <= d) vh.set(0, 0, 0); else vh.multiplyScalar((cur - d) / cur);
+    const slow = this.landSlowTimer > 0 ? this.landSlowMul : 1;
+    if (!hasWish) {
+      const sp = vh.length();
+      const ns = Math.max(0, sp - Math.max(sp, T.stopMinSpeed) * T.stopFriction * dt);
+      if (sp > 1e-6) vh.multiplyScalar(ns / sp);
+      return;
     }
+    const ts = this.targetSpeed(ads) * slow;
+    const w = this.wishDir;
+    let along = vh.x * w.x + vh.z * w.z;
+    let px = vh.x - w.x * along, pz = vh.z - w.z * along;
+    if (along < ts) {
+      const accel = along < T.walkSpeed * 0.98
+        ? clamp((ts - along) * T.groundAccelRate, 3, T.groundAccelMax)
+        : T.sprintAccel;
+      along = Math.min(ts, along + accel * dt);
+    } else {
+      along = Math.max(ts, along - Math.max(along, T.stopMinSpeed) * T.stopFriction * dt);
+    }
+    const pl = Math.hypot(px, pz);
+    if (pl > 1e-6) {
+      const np = Math.max(0, pl - Math.max(pl * T.groundAccelRate, T.turnAccel) * dt);
+      px *= np / pl; pz *= np / pl;
+    }
+    vh.set(w.x * along + px, 0, w.z * along + pz);
   }
 
-  private airAccelerate(dt: number, vh: THREE.Vector3, hasWish: boolean): void {
+  private airAccelerate(dt: number, vh: THREE.Vector3, hasWish: boolean, ads: number): void {
     const T = this.tuning;
     const before = vh.length();
     if (hasWish) {
       vh.addScaledVector(this.wishDir, T.airAccel * dt);
-      const cap = Math.max(before, Math.max(this.takeoffSpeed, T.airMinSpeedCap) * (this._stance === 'stand' ? 1 : 0.8));
+      // never faster in the air than you took off or than the current state allows on the ground
+      const cap = Math.max(this.takeoffSpeed, this.targetSpeed(ads));
       const after = vh.length();
       if (after > cap && after > before) vh.multiplyScalar(Math.max(before, cap) / after);
     }
@@ -514,17 +580,26 @@ export class PlayerController implements PlayerState {
 
   private doJump(): void {
     const T = this.tuning;
-    const vy = Math.sqrt(2 * T.gravity * T.jumpHeight);
+    const fatigue = this.time - this.lastJumpTime < T.jumpFatigueWindow ? T.jumpFatigueMul : 1;
+    const vy = Math.sqrt(2 * T.gravity * T.jumpHeight * fatigue);
     if (this._sliding) {
-      // slide-jump keeps the slide momentum (capped)
-      const hs = Math.min(this._speed, 8.2);
+      // slide-jump keeps the slide direction but exits at no more than sprint speed, and resumes sprint/tac
+      const hs = Math.min(this.slideSpeed, T.sprintSpeed);
       this.velocity.x = this.slideDir.x * hs; this.velocity.z = this.slideDir.z * hs;
+      const wasSprint = this.slideWasSprint, wasTac = this.slideWasTac;
       this.endSlide('stand');
+      if (wasSprint && this._stance === 'stand' && this.wishF > 0) {
+        this.sprintLatch = true;
+        this._sprinting = true;
+        this._tac = wasTac && this.tacMeter > 0;
+      }
     }
     this.velocity.y = vy;
     this._grounded = false;
     this.coyote = 0;
     this.noSnapTime = 0.2;
+    this.lastJumpTime = this.time;
+    this.airPeakY = this.position.y;
     this.takeoffSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     this.rig.jump();
     this.ctx.events.emit('player:jump', { position: this.position.clone() });
@@ -535,7 +610,12 @@ export class PlayerController implements PlayerState {
     const hs = Math.hypot(this.velocity.x, this.velocity.z);
     if (hs > 0.5) this.slideDir.set(this.velocity.x / hs, 0, this.velocity.z / hs);
     else this.slideDir.copy(this._fwd);
-    this.slideSpeed = clamp(Math.max(hs * T.slideBoostMul + 0.6, T.slideBoostMin), T.slideBoostMin, T.slideBoostMax);
+    // entry × 1.1 (no floor), capped at 1.15 × tac speed; a repeat slide within 1.5 s gets no boost and is shorter
+    const repeat = this.time - this.lastSlideEnd < T.slideRepeatWindow;
+    this.slideSpeed = Math.min(hs * (repeat ? 1 : T.slideBoostMul), T.tacSprintSpeed * T.slideMaxMul);
+    this.slideDurMul = repeat ? T.slideRepeatDurationMul : 1;
+    this.slideWasSprint = this._sprinting;
+    this.slideWasTac = this._tac;
     this._sliding = true;
     this.slideTime = 0;
     this.slideAir = 0;
@@ -549,6 +629,7 @@ export class PlayerController implements PlayerState {
     if (!this._sliding) return;
     this._sliding = false;
     this.slideCooldown = this.tuning.slideCooldown;
+    this.lastSlideEnd = this.time;
     if (to === 'stand') { if (!this.setStance('stand')) this._stance = 'crouch'; }
     else this._stance = 'crouch';
   }
@@ -564,7 +645,8 @@ export class PlayerController implements PlayerState {
       const x = this.slideDir.x * c - this.slideDir.z * s, z = this.slideDir.x * s + this.slideDir.z * c;
       this.slideDir.set(x, 0, z).normalize();
     }
-    const decel = this.slideTime < T.slideEarlyTime ? T.slideDecelEarly : T.slideDecelLate;
+    const dm = this.slideDurMul;
+    const decel = (this.slideTime < T.slideEarlyTime * dm ? T.slideDecelEarly : T.slideDecelLate) / dm;
     // slope: accelerate downhill, brake uphill
     const n = this.groundNormal;
     const slopeA = T.gravity * T.slideSlopeGain * (n.x * this.slideDir.x + n.z * this.slideDir.z);
@@ -572,10 +654,11 @@ export class PlayerController implements PlayerState {
     if (!this._grounded) this.slideAir += dt; else this.slideAir = 0;
     vh.copy(this.slideDir).multiplyScalar(this.slideSpeed);
     const on = (a: Action) => this.inputEnabled && this.ctx.input.down.has(a);
-    if (this.slideSpeed < T.slideEndSpeed || this.slideTime > T.slideMaxTime || this.slideAir > 0.25) {
+    if (this.slideSpeed < T.slideEndSpeed || this.slideTime > T.slideMaxTime * dm || this.slideAir > 0.25) {
       const toSprint = on('sprint') && this.wishF > 0;
+      const wasTac = this.slideWasTac;
       this.endSlide(toSprint ? 'stand' : 'crouch');
-      if (toSprint) this.sprintLatch = true;
+      if (toSprint && this._stance === 'stand') { this.sprintLatch = true; this._tac = wasTac && this.tacMeter > 0; }
     }
   }
 
@@ -590,7 +673,6 @@ export class PlayerController implements PlayerState {
     const m1 = this.kcc.computedMovement();
     const mv = { x: m1.x, y: m1.y, z: m1.z };
     const wasGrounded = this._grounded;
-    const oldY = this.position.y;
     const vyBefore = this.velocity.y;
     this.position.x += mv.x; this.position.y += mv.y; this.position.z += mv.z;
     this.syncCollider();
@@ -599,25 +681,37 @@ export class PlayerController implements PlayerState {
     const dh = Math.hypot(desired.x, desired.z);
     let ah = Math.hypot(mv.x, mv.z);
     const climbed = mv.y > desired.y + 0.004;
-    // Autostep eats part of the horizontal move on the frame it steps; spend the remainder in a
-    // second pass so stairs are climbed at (nearly) full speed.
-    if (climbed && wasGrounded && dh > 1e-5 && ah < dh * 0.95) {
+    // Autostep eats part of the horizontal move on the frame it steps; spend the remainder in extra
+    // passes so stairs are climbed at full speed (no per-riser speed dips).
+    if (wasGrounded && dh > 1e-5 && ah < dh * 0.98) {
       const ux = desired.x / dh, uz = desired.z / dh;
-      const along = mv.x * ux + mv.z * uz;
-      const rem = dh - Math.max(0, along);
-      if (rem > 1e-4) {
+      for (let pass = 0; pass < 4; pass++) {
+        const along = mv.x * ux + mv.z * uz;
+        const rem = dh - Math.max(0, along);
+        if (rem < dh * 0.02) break;
         this.kcc.computeColliderMovement(this.collider, { x: ux * rem, y: -0.002, z: uz * rem }, flags, GROUPS.queryCharacter);
         const m2 = this.kcc.computedMovement();
+        if (Math.hypot(m2.x, m2.z) < 1e-4) break;
         this.position.x += m2.x; this.position.y += m2.y; this.position.z += m2.z;
         mv.x += m2.x; mv.y += m2.y; mv.z += m2.z;
         this.syncCollider();
         kccGrounded = kccGrounded || this.kcc.computedGrounded();
-        ah = Math.hypot(mv.x, mv.z);
       }
+      ah = Math.hypot(mv.x, mv.z);
+    }
+    // snap-down / autostep can also push slightly further than asked: trim back along the path
+    if (dh > 1e-5 && ah > dh * 1.005) {
+      const k = (ah - dh) / ah;
+      this.position.x -= mv.x * k; this.position.z -= mv.z * k;
+      mv.x *= 1 - k; mv.z *= 1 - k;
+      ah = dh;
+      this.syncCollider();
     }
 
     // clip horizontal velocity against walls (not when the loss came from climbing a step/slope)
-    if (dh > 1e-5 && ah < dh * 0.9 && !climbed) {
+    const blocked = dh > 1e-5 && ah < dh * 0.9 && !climbed;
+    this.blockedFrames = blocked ? this.blockedFrames + 1 : 0;
+    if (blocked && (!wasGrounded || this.blockedFrames >= 2)) {
       const k = ah / dh;
       if (ah > 1e-6) {
         const sp = Math.hypot(this.velocity.x, this.velocity.z) * k;
@@ -645,24 +739,45 @@ export class PlayerController implements PlayerState {
       if (fix !== 0) { this.position.y += fix; mv.y += fix; this.groundDist += fix; this.syncCollider(); }
     }
 
-    // stair smoothing (keep the camera from snapping on autostep / step-down)
     // Vertical motion beyond what the ground slope under the centre explains (stairs, curbs, snap-down)
-    // goes into stepOffset, which decays smoothly — slopes and ramps are followed exactly.
-    const dy = this.position.y - oldY;
-    if (wasGrounded && this._grounded && !this.mantle) {
-      const ny = Math.max(0.2, this.groundNormal.y);
-      const slopeDy = ah * (Math.sqrt(1 - ny * ny) / ny) + 0.002;
-      const excess = Math.sign(dy) * Math.max(0, Math.abs(dy) - slopeDy);
-      if (excess !== 0) this.stepOffset = clamp(this.stepOffset - excess, -0.6, 0.6);
+    // is smoothed by the camera follower; slopes and ramps are followed exactly.
+    if (wasGrounded && this._grounded) {
+      const gny = Math.max(0.2, this.groundNormal.y);
+      const dy = mv.y;
+      const slopeDy = ah * (Math.sqrt(1 - gny * gny) / gny) + 0.002;
+      this.stepExcess = Math.sign(dy) * Math.max(0, Math.abs(dy) - slopeDy);
     }
-
+    // look-ahead: fit a line through the ground heights 0.15–0.75 m ahead; the part of that slope the
+    // ground under the centre doesn't already explain (i.e. stairs) sets the camera's glide rate
+    this.camRateTarget = 0;
+    const hsp = ah / dt;
+    if (this._grounded && hsp > 0.3) {
+      const ux = mv.x / ah, uz = mv.z / ah;
+      let sx = 0, sy = 0, sxx = 0, sxy = 0, n = 0;
+      for (let i = 1; i <= 5; i++) {
+        const d = 0.15 * i;
+        const g = this.queries.ray(_v2.set(this.position.x + ux * d, this.position.y + 0.7, this.position.z + uz * d), DOWN, 1.5);
+        if (!g || g.distance < 0.02 || g.normal.y < 0.7) { n = 0; break; }
+        const hy = g.point.y + T.skin - this.position.y;
+        sx += d; sy += hy; sxx += d * d; sxy += d * hy; n++;
+      }
+      if (n >= 3) {
+        const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+        const gny = Math.max(0.2, this.groundNormal.y);
+        const centre = Math.sqrt(1 - gny * gny) / gny; // |tan| of the surface under the centre
+        const extra = Math.sign(slope) * Math.max(0, Math.abs(slope) - centre);
+        this.camRateTarget = clamp(extra, -1.2, 1.2) * hsp;
+      }
+    }
+    if (!this._grounded) this.airPeakY = Math.max(this.airPeakY, this.position.y);
     if (this._grounded) {
-      if (!wasGrounded) this.onLand(-vyBefore);
+      if (!wasGrounded) this.onLand(-vyBefore, Math.max(0, this.airPeakY - this.position.y));
       this.coyote = T.coyoteTime;
       this.airTime = 0;
       if (this.velocity.y < 0) this.velocity.y = -2;
     } else {
       if (wasGrounded) {
+        this.airPeakY = this.position.y;
         this.takeoffSpeed = Math.hypot(this.velocity.x, this.velocity.z);
         if (this.velocity.y < 0) this.velocity.y = 0; // walked off a ledge: start falling from rest
       }
@@ -684,17 +799,24 @@ export class PlayerController implements PlayerState {
     }
   }
 
-  private onLand(impact: number): void {
+  private onLand(impact: number, fallHeight?: number, fromVault = false): void {
     const T = this.tuning;
     this._lastLandImpact = impact;
     this._landTime = this.time;
+    const fallH = fallHeight ?? (impact * impact) / (2 * T.gravity);
+    const hard = impact >= T.hardLandSpeed;
     if (impact > 1) {
-      this.rig.land(impact);
+      this.rig.land(fallH, hard);
+      if (hard) this.rig.addShake(0.35);
       this.ctx.events.emit('player:land', { position: this.position.clone(), impactSpeed: impact, surface: this.groundSurface });
     }
-    if (impact > 8 && !this._sliding) {
-      const k = impact > 12 ? 0.6 : 0.85;
-      this.velocity.x *= k; this.velocity.z *= k;
+    // landing slow-down: 0.75× for 0.2 s, hard landings 0.5× for 0.35 s (sliding keeps its momentum)
+    if (impact >= 3 && !this._sliding && !fromVault) {
+      this.landSlowMul = hard ? T.hardLandSlowMul : T.landSlowMul;
+      this.landSlowTimer = hard ? T.hardLandSlowTime : T.landSlowTime;
+      const hs = Math.hypot(this.velocity.x, this.velocity.z);
+      const cap = Math.max(T.walkSpeed * this.landSlowMul, hs * (hard ? 0.6 : 0.85));
+      if (hs > cap) { this.velocity.x *= cap / hs; this.velocity.z *= cap / hs; }
     }
     if (impact > T.fallDamageSpeed) this.damage((impact - T.fallDamageSpeed) * T.fallDamagePerMs, null);
     this.lastFootIndex = Math.floor(this._stridePhase * 2);
@@ -702,25 +824,34 @@ export class PlayerController implements PlayerState {
 
   private tryStartMantle(grounded: boolean): boolean {
     if (this._stance === 'prone' || !this._alive) return false;
-    const plan = planMantle(this.queries, this.position, this._fwd, grounded, this.tuning, Math.hypot(this.velocity.x, this.velocity.z));
+    const groundY = isFinite(this.groundDist) ? this.position.y - this.groundDist : null;
+    const plan = planMantle(this.queries, {
+      feet: this.position, fwd: this._fwd, grounded,
+      vel: _v2.set(this.velocity.x, 0, this.velocity.z), vy: grounded ? 0 : this.velocity.y, groundY,
+    }, this.tuning);
     if (!plan) return false;
-    plan.startVy = Math.max(0, this.velocity.y);
-    this.mantle = { plan, t: 0, wasSprinting: this.sprintLatch, entrySpeed: Math.hypot(this.velocity.x, this.velocity.z) };
-    if (this._sliding) this.endSlide('crouch');
+    const wasTac = this._tac || (this._sliding && this.slideWasTac);
+    this.mantle = { plan, t: 0, wasSprinting: this.sprintLatch || this._sprinting || (this._sliding && this.slideWasSprint), wasTac };
+    if (this._sliding) this.endSlide(plan.endCrouched ? 'crouch' : 'stand');
+    if (this._sprinting) this.sprintOut = this._tac ? this.tuning.tacSprintOutTime : this.tuning.sprintOutTime;
     this._sprinting = false; this._tac = false;
-    this.velocity.set(0, 0, 0);
-    this.rig.punch(-0.2, 0, 0.1);
+    this.rig.punch(plan.kind === 'vault' ? -0.08 : -0.15, 0, 0.08);
     this.ctx.events.emit('player:mantle', { position: this.position.clone(), height: plan.height, vault: plan.kind === 'vault' });
     return true;
   }
 
   private updateMantle(dt: number): void {
     const m = this.mantle!;
-    const T = this.tuning;
     m.t += dt;
-    const k = m.t / m.plan.duration;
+    const k = Math.min(1, m.t / m.plan.duration);
     const prev = _v2.copy(this.position);
     evalMantle(m.plan, k, this.position);
+    if (k >= 1) {
+      // spend the rest of the frame moving at the exit velocity so speed stays continuous
+      const left = m.t - m.plan.duration;
+      this.position.x += m.plan.dir.x * m.plan.v1 * left;
+      this.position.z += m.plan.dir.z * m.plan.v1 * left;
+    }
     this.syncCollider();
     this.velocity.copy(this.position).sub(prev).divideScalar(dt);
     this._speed = Math.hypot(this.velocity.x, this.velocity.z);
@@ -729,29 +860,45 @@ export class PlayerController implements PlayerState {
       this.mantle = null;
       const p = m.plan;
       this._stance = p.endCrouched ? 'crouch' : 'stand';
-      const exit = p.kind === 'vault' ? Math.max(3.2, Math.min(m.entrySpeed * 0.85, T.sprintSpeed)) : (m.wasSprinting ? 2.5 : 1.2);
-      this.velocity.set(p.dir.x * exit, p.kind === 'vault' ? -1 : 0, p.dir.z * exit);
-      this.sprintLatch = m.wasSprinting && !p.endCrouched;
+      // hand off with the path's exit velocity (continuous with the curve's end tangent)
+      this.velocity.set(p.dir.x * p.v1, mantleExitVy(p), p.dir.z * p.v1);
+      if (m.wasSprinting && !p.endCrouched && this.wishF > 0) {
+        this.sprintLatch = true;
+        this._sprinting = true;
+        this._tac = m.wasTac && this.tacMeter > 0;
+      }
       this.probeGround();
       this._grounded = this.groundDist < 0.08;
-      if (this._grounded) this.onLand(p.kind === 'vault' ? 3.5 : 1.5);
-      this.takeoffSpeed = exit;
+      this.takeoffSpeed = p.v1;
+      if (this._grounded) {
+        const impact = -this.velocity.y;
+        this.velocity.y = -2;
+        this.airTime = 0;
+        if (impact > 1) this.onLand(impact, Math.max(0, p.apexY - p.end.y), p.kind === 'vault');
+      }
     }
   }
 
   /** Stance height, lean, blends, stride/footsteps, health, camera. */
   private finishFrame(dt: number, ads: number): void {
     const T = this.tuning;
-    // ---- capsule height ----
+    // ---- capsule height: smoothstep transitions with CoD-like stance timings ----
     const targetH = !this._alive ? T.heightProne
-      : this.mantle ? T.heightCrouch
+      : this.mantle ? (this.mantle.plan.endCrouched ? T.heightCrouch : T.heightStand)
       : this._sliding ? T.heightSlide
       : this._stance === 'prone' ? T.heightProne
       : this._stance === 'crouch' ? T.heightCrouch : T.heightStand;
-    let newH = damp(this.height, targetH, 3 / T.stanceTime, dt);
-    if (Math.abs(newH - targetH) < 0.003) newH = targetH;
-    if (newH > this.height && !this.mantle && !this.queries.fits(this.position, newH)) {
+    const an = this.hAnim;
+    if (Math.abs(targetH - an.to) > 1e-4) {
+      an.from = this.height; an.to = targetH; an.t = 0;
+      an.dur = this.stanceDuration(this.height, targetH);
+    }
+    an.t += dt;
+    const u = an.dur > 0 ? clamp(an.t / an.dur, 0, 1) : 1;
+    let newH = an.from + (an.to - an.from) * (u * u * (3 - 2 * u));
+    if (newH > this.height + 1e-5 && !this.mantle && !this.queries.fits(this.position, newH)) {
       newH = this.height; // blocked overhead — stay low
+      an.t -= dt;
       if (this._stance === 'stand' && targetH === T.heightStand) this._stance = 'crouch';
     }
     if (newH !== this.height) {
@@ -759,9 +906,9 @@ export class PlayerController implements PlayerState {
       this.collider.setHalfHeight(this.halfHeightFor(newH));
       this.syncCollider();
     }
-    const eyeTarget = this.eyeForHeight(this.height);
-    this.eye = damp(this.eye, eyeTarget, 22, dt);
+    this.eye = this._alive ? this.eyeForHeight(this.height) : damp(this.eye, 0.35, 4, dt);
     this._crouchBlend = clamp((T.heightStand - this.height) / (T.heightStand - T.heightCrouch), 0, 1.5);
+    this.landSlowTimer = Math.max(0, this.landSlowTimer - dt);
 
     // ---- lean ----
     const leanInput = (this.inputEnabled && this._alive ? ((this.ctx.input.down.has('leanRight') ? 1 : 0) - (this.ctx.input.down.has('leanLeft') ? 1 : 0)) : 0);
@@ -803,8 +950,9 @@ export class PlayerController implements PlayerState {
       this.health = Math.min(T.maxHealth, this.health + T.regenRate * dt);
     }
 
-    // ---- stair smoothing decay ----
-    this.stepOffset = damp(this.stepOffset, 0, T.stairSmoothRate, dt);
+    // ---- camera height follower ----
+    this.updateCamY(dt, this.stepExcess);
+    this.stepExcess = 0;
 
     // ---- enemy-bullet capsule ----
     const r = T.radius;
@@ -816,9 +964,56 @@ export class PlayerController implements PlayerState {
     this.updateCamera(dt, ads);
   }
 
+  /** Stance transition time between two capsule heights (s). */
+  private stanceDuration(from: number, to: number): number {
+    const T = this.tuning;
+    const bucket = (h: number) => h < (T.heightProne + T.heightSlide) / 2 ? 0 : h < (T.heightSlide + T.heightCrouch) / 2 ? 1 : h < (T.heightCrouch + T.heightStand) / 2 ? 2 : 3;
+    const H = [T.heightProne, T.heightSlide, T.heightCrouch, T.heightStand];
+    const a = bucket(from), b = bucket(to);
+    let d: number;
+    if (!this._alive) d = 0.6;
+    else if (b === 1) d = T.tToSlide;
+    else if (a === 1) d = b === 3 ? T.tSlideOut + 0.05 : b === 0 ? T.tCrouchProne : T.tSlideOut;
+    else if (a === 3 && b === 2 || a === 2 && b === 3) d = T.tStandCrouch;
+    else if (a === 2 && b === 0) d = T.tCrouchProne;
+    else if (a === 3 && b === 0) d = T.tStandProne;
+    else if (a === 0 && b === 2) d = T.tProneCrouch;
+    else if (a === 0 && b === 3) d = T.tProneStand;
+    else d = T.tStandCrouch;
+    // partial transitions (reversing mid-way) take proportionally less time
+    const nominal = Math.abs(H[b] - H[a]);
+    const frac = nominal > 1e-3 ? clamp(Math.abs(to - from) / nominal, 0.3, 1) : 1;
+    return d * frac;
+  }
+
+  /**
+   * Camera feet-height follower. The camera sits at feet + e, where e absorbs only the vertical jumps the
+   * ground slope can't explain (stair risers, curbs, snap-downs) and decays as a critically damped
+   * 2nd-order system (ω = camYOmega) with the estimated stair climb rate as velocity feed-forward:
+   * ramps, jumps, falls and mantles are followed exactly, stairs become a steady glide with ~zero mean
+   * lag, and camera position and velocity stay continuous.
+   */
+  private updateCamY(dt: number, excess: number): void {
+    const T = this.tuning;
+    const y = this.position.y;
+    if (this.camReset) { this.camE = 0; this.camEV = 0; this.camRate = 0; this.camReset = false; this.camY = y; return; }
+    if (excess !== 0) this.camE = clamp(this.camE - excess, -0.6, 0.6);
+    // climb-rate estimate from the step stream (decays quickly once the steps stop)
+    this.camRate = damp(this.camRate, this.camRateTarget, 14, dt);
+    const w = T.camYOmega;
+    const n = Math.max(1, Math.ceil(dt / (1 / 240)));
+    const h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const a = -w * w * this.camE - 2 * w * (this.camEV - this.camRate);
+      this.camEV += a * h;
+      this.camE += this.camEV * h;
+    }
+    this.camE = clamp(this.camE, -0.6, 0.6);
+    this.camY = y + this.camE;
+  }
+
   private eyeForHeight(h: number): number {
     const T = this.tuning;
-    if (!this._alive) return THREE.MathUtils.lerp(this.eye, 0.35, clamp(this.deathTime * 2, 0, 1));
     const pts: [number, number][] = [[T.heightProne, T.eyeProne], [T.heightSlide, T.eyeSlide], [T.heightCrouch, T.eyeCrouch], [T.heightStand, T.eyeStand]];
     if (h <= pts[0][0]) return pts[0][1];
     for (let i = 1; i < pts.length; i++) {
@@ -832,7 +1027,7 @@ export class PlayerController implements PlayerState {
 
   private updateCamera(dt: number, ads = 0): void {
     const T = this.tuning;
-    const eye = _v.set(this.position.x, this.position.y + this.eye + this.stepOffset, this.position.z);
+    const eye = _v.set(this.position.x, this.camY + this.eye, this.position.z);
     const hs = this._speed;
     const strafe = clamp((this.velocity.x * this._right.x + this.velocity.z * this._right.z) / T.walkSpeed, -1, 1);
     const fovBase = this.ctx.weapons?.fovTarget ?? T.baseFov;

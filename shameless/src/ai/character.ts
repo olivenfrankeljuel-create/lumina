@@ -184,7 +184,7 @@ function headSkinGroup(): SdfGroup {
 }
 
 function eyesGroup(): SdfGroup {
-  return { prims: both([ell(V(0.031, 1.692, 0.083), V(0.0115, 0.0115, 0.0115))]) };
+  return { prims: both([ell(V(0.031, 1.691, 0.08), V(0.0105, 0.0095, 0.0105))]) };
 }
 
 function balaclavaGroup(): SdfGroup {
@@ -372,6 +372,19 @@ function gogglesGroups(onHelmet: boolean): { frame: SdfGroup; lens: SdfGroup } {
   };
   const lens: SdfGroup = { prims: [box(V(0, y, z + 0.004), V(0.07, 0.021, 0.008), { round: 0.008, rot })] };
   return { frame, lens };
+}
+
+function headband(rx: number, top: number, base: number): Prim[] {
+  const out: Prim[] = [];
+  const N = 8;
+  let prev: V3 | null = null;
+  for (let i = 0; i <= N; i++) {
+    const t = -Math.PI / 2 + (i / N) * Math.PI;
+    const p: V3 = [rx * Math.sin(t), base + (top - base) * Math.cos(t), -0.005];
+    if (prev) out.push(cap(prev, p, 0.0075, { k: 0.004 }));
+    prev = p;
+  }
+  return out;
 }
 
 function beanieGroup(): SdfGroup {
@@ -579,7 +592,7 @@ function partsFor(v: Variant): PartDef[] {
     }
   } else if (v.headgear === 'beanie') {
     P.push({ key: 'beanie', group: beanieGroup(), h: 0.0055, mat: 'cloth_black', tint: v.helmetTint, weights: { bone: B.head }, uv: 'cyl' });
-    if (v.headset) P.push({ key: 'headset', group: { prims: both([cyl(V(0.085, 1.672, 0.0), V(0.118, 1.672, 0.0), 0.036, { round: 0.012 })]).concat([cone(V(0.1, 1.69, 0), V(0, 1.84, -0.01), 0.008, 0.008), cone(V(-0.1, 1.69, 0), V(0, 1.84, -0.01), 0.008, 0.008, { k: 0.02 })]) }, h: 0.0045, mat: 'plastic_black', tint: 0x3a3a36, weights: { bone: B.head }, uv: 'box' });
+    if (v.headset) P.push({ key: 'headset', group: { prims: both([cyl(V(0.085, 1.672, 0.0), V(0.118, 1.672, 0.0), 0.036, { round: 0.012 })]).concat(headband(0.104, 1.832, 1.69)) }, h: 0.0045, mat: 'plastic_black', tint: 0x3a3a36, weights: { bone: B.head }, uv: 'box' });
   } else {
     P.push({ key: 'cap', group: capGroup(), h: 0.0055, mat: v.shirtMat, tint: v.shirtTint, weights: { bone: B.head }, uv: 'box' });
   }

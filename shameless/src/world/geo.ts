@@ -98,9 +98,10 @@ export function paint(g: THREE.BufferGeometry, c: THREE.Color | number): THREE.B
 /** Irregular closed polygon (jittered ellipse) as THREE.Shape points. */
 export function blobPoints(cx: number, cy: number, rx: number, ry: number, rnd: () => number, n = 12, jag = 0.35): THREE.Vector2[] {
   const pts: THREE.Vector2[] = [];
+  const ph1 = rnd() * 6.28, ph2 = rnd() * 6.28;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
-    const k = 1 - jag * 0.5 + rnd() * jag;
+    const k = (1 - jag * 0.5 + rnd() * jag * 0.6) * (1 + 0.22 * Math.sin(a * 2 + ph1) + 0.12 * Math.sin(a * 5 + ph2));
     pts.push(new THREE.Vector2(cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k));
   }
   return pts;

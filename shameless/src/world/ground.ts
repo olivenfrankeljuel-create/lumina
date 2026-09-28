@@ -6,8 +6,14 @@ import { D } from './textures';
 import { displace } from './geo';
 
 /** Horizontal slab patch (top at y). Thin box so edges read as real paving. */
-export function pad(w: WCtx, key: string, x0: number, z0: number, x1: number, z1: number, y: number, thick = 0.06, col = false) {
-  w.b.boxMM(key, x0, y - thick, z0, x1, y, z1, col);
+/** Every ground patch also gets a thick (1 m) collision slab whose top matches the visual surface. */
+export function pad(w: WCtx, key: string, x0: number, z0: number, x1: number, z1: number, y: number, thick = 0.06, col = true) {
+  w.b.boxMM(key, x0, y - thick, z0, x1, y, z1, false);
+  if (col) groundCol(w, key, x0, z0, x1, z1, y);
+}
+
+export function groundCol(w: WCtx, key: string, x0: number, z0: number, x1: number, z1: number, y: number) {
+  w.b.colBox((x0 + x1) / 2, y - 0.5, (z0 + z1) / 2, x1 - x0, 1, z1 - z0, w.b.surfaceOf(key));
 }
 
 /** Subdivided ground patch with subtle undulation (dirt / sand areas). */
@@ -22,6 +28,7 @@ export function softGround(w: WCtx, key: string, x0: number, z0: number, x1: num
     v.y += (fbm(v.x * 0.25, v.z * 0.25, seed, 3) - 0.35) * amp * k;
   });
   w.b.add(key, g);
+  groundCol(w, key, x0, z0, x1, z1, y);
 }
 
 /** Sidewalk strip with curb on the road side. roadSide: which edge (in x or z) touches the road. */
